@@ -2,7 +2,7 @@ pub mod http;
 pub mod parser;
 
 use std::ffi::OsStr;
-use std::fs::{canonicalize};
+use std::fs::canonicalize;
 use std::path::{Path, PathBuf};
 use std::{env, io, panic};
 
@@ -10,6 +10,7 @@ pub struct Config {
     pub directory: String,
     pub max_headers_number: usize,
     pub port: u16,
+    pub keep_alive: u8,
 }
 
 impl Config {
@@ -31,6 +32,7 @@ impl Config {
             directory,
             max_headers_number: 512,
             port,
+            keep_alive: 20,
         })
     }
 }
@@ -39,7 +41,7 @@ pub enum UriStatus {
     Ok(PathBuf),
     NonExistent,
     OutOfRange,
-    Directory
+    Directory,
 }
 
 pub fn verify_uri(dir: &str, domain: &str, uri: &str) -> UriStatus {

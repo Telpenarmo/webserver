@@ -30,10 +30,14 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn new(status: Status) -> Response{
-        Response { status, headers: HashMap::with_capacity(5), content: None }
+    pub fn new(status: Status) -> Response {
+        Response {
+            status,
+            headers: HashMap::with_capacity(5),
+            content: None,
+        }
     }
-    
+
     pub fn render(mut self) -> Vec<u8> {
         let status_line = format!("HTTP/1.1 {}", self.status.code());
         let status_line = status_line.as_bytes().to_vec();
@@ -54,14 +58,12 @@ impl Response {
     }
 
     pub fn set_header(&mut self, name: String, value: Vec<u8>) {
-        self.headers.entry(name).or_insert(value);
+        self.headers.insert(name, value);
     }
 
     pub fn add_content(&mut self, content: Vec<u8>) {
         let length: Vec<u8> = content.len().to_string().into_bytes();
-        self.headers
-            .entry("Content-Length".to_owned())
-            .or_insert(length);
+        self.headers.insert("Content-Length".into(), length);
         self.content = Some(content);
     }
 }

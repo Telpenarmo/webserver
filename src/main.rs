@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::time::{Duration};
+use std::time::Duration;
 use std::{env, io};
 
 use webserver::http::{Request, Response, Status};
@@ -31,30 +31,44 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream, config: &Config) {
     loop {
-        let resp = match read_request(&mut stream, config) {
-            Ok(request) => handle_request(request, config),
+        let mut close_connection = false;
+        let response = match read_request(&mut stream, config) {
+            Ok(request) => {
+                let (response, close) = handle_request(request, config);
+                close_connection = close;
+                Some(response)
+            }
             Err(ReadError::ConnectionClosed) => {
-                let peer = stream.peer_addr().unwrap();
-                eprintln!("{} closed the connection.", peer);
-                return;
+                close_connection = true;
+                None
             }
             Err(ReadError::Timeout) => {
                 let resp = Response::new(Status::RequestTimeout);
                 let peer = stream.peer_addr().unwrap();
                 eprintln!("Timeout for {}", peer);
-                resp
+                close_connection = true;
+                Some(resp)
             }
-            Err(ReadError::BadSyntax) => {
-                Response::new(Status::BadRequest)
-            }
-            Err(ReadError::TooManyHeaders) => {
-                Response::new(Status::BadRequest)
-            }
+            Err(ReadError::BadSyntax) => Some(Response::new(Status::BadRequest)),
+            Err(ReadError::TooManyHeaders) => Some(Response::new(Status::BadRequest)),
         };
-        let resp = resp.render();
-        stream
-            .write_all(&resp)
-            .unwrap_or_else(|err| panic!("writing error: {}", err))
+        if let Some(mut response) = response {
+            let connection_header = match close_connection {
+                true => "close",
+                false => "keep-alive",
+            };
+            response.set_header("Connection".into(), connection_header.into());
+
+            let response = response.render();
+            stream
+                .write_all(&response)
+                .unwrap_or_else(|err| panic!("writing error: {}", err));
+        }
+        if close_connection {
+            let peer = stream.peer_addr().unwrap();
+            eprintln!("{} closed the connection.", peer);
+            return;
+        }
     }
 }
 
@@ -99,14 +113,17 @@ fn get_res_or_partial(
 fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, ReadError> {
     let mut read_buf = [0; 1024];
     let mut buffer = Vec::with_capacity(1024);
-    stream.set_read_timeout(Some(Duration::new(2, 0))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::new(config.keep_alive.into(), 0)))
+        .unwrap();
     loop {
         match stream.read(&mut read_buf) {
             Ok(0) => {
                 break Err(ReadError::ConnectionClosed); // connection closed
             }
             Err(err) => {
-                if err.kind() == io::ErrorKind::TimedOut {
+                if err.kind() == io::ErrorKind::TimedOut || err.kind() == io::ErrorKind::WouldBlock
+                {
                     break Err(ReadError::Timeout);
                 } // 408
                 eprintln!("err: {}", err.kind());
@@ -122,20 +139,29 @@ fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, Read
     }
 }
 
-fn handle_request(request: Request, config: &Config) -> Response {
+fn handle_request(request: Request, config: &Config) -> (Response, bool) {
+    let mut bad_request = (Response::new(Status::BadRequest), false);
     let host = match request.headers.get("Host") {
         Some(v) => v,
-        None => return Response::new(Status::BadRequest),
+        None => {
+            bad_request.0.add_content("Host header is required".into());
+            return bad_request;
+        }
     };
     let host = match String::from_utf8(host.to_vec()) {
         Ok(h) => h,
-        Err(_) => return Response::new(Status::BadRequest),
+        Err(err) => {
+            bad_request
+                .0
+                .add_content(format!("Utf-8 error: {}", err.utf8_error()).into());
+            return bad_request;
+        }
     };
     let hostname = host.split_once(':').unwrap().0;
     if request.method.as_str() != "GET" {
         let mut resp = Response::new(Status::MethodNotAllowed);
         resp.set_header("Allow".to_owned(), "GET".to_owned().into_bytes());
-        return resp;
+        return (resp, false);
     }
 
     let uri_status = verify_uri(&config.directory, &hostname, &request.path);
@@ -150,11 +176,9 @@ fn handle_request(request: Request, config: &Config) -> Response {
     let mut response = Response::new(status);
 
     match uri_status {
-        UriStatus::Ok(path) => {
-            let path = path.as_path();
-            let mut file = File::open(path).unwrap_or_else(|err| {
-                panic!("file::open: {}", err)
-            });
+        UriStatus::Ok(path_buf) => {
+            let path = path_buf.as_path();
+            let mut file = File::open(path).unwrap_or_else(|err| panic!("file::open: {}", err));
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).unwrap();
             response.add_content(buffer);
@@ -163,7 +187,9 @@ fn handle_request(request: Request, config: &Config) -> Response {
         UriStatus::NonExistent => {
             response.add_content("<h1>404</h1><p>Requested page was not found.</p>".into())
         }
-        UriStatus::OutOfRange => {}
+        UriStatus::OutOfRange => {
+            response.add_content("<h1>404</h1><p>Requested resource cannot be accessed.</p>".into())
+        }
         UriStatus::Directory => {
             let sep = if request.path.ends_with("/") { "" } else { "/" };
             let value = ["http://", &host, &request.path, sep, "index.html"].concat();
@@ -172,5 +198,10 @@ fn handle_request(request: Request, config: &Config) -> Response {
         }
     };
 
-    response
+    let close = request
+        .headers
+        .get("close")
+        .map_or(false, |v| v.eq("close".as_bytes()));
+
+    (response, close)
 }
