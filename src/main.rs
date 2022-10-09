@@ -1,35 +1,49 @@
 use std::fs::File;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{env, io};
+use std::{env, io, thread};
 
 use webserver::http::{Request, Response, Status};
-use webserver::{match_file_type, parser, UriStatus};
+use webserver::{get_addrs, match_file_type, parser, UriStatus};
 use webserver::{verify_uri, Config};
 
 fn main() {
     let config = Config::new(env::args()).unwrap();
 
-    let addr: SocketAddr = (("localhost", config.port))
-        .to_socket_addrs()
-        .expect("Invalid IP address")
-        .next()
-        .unwrap();
+    let addrs = get_addrs(&config);
 
-    let listener = TcpListener::bind(addr).unwrap();
-    println!(
-        "Server is listening on {}",
-        ["http://localhost", &(config.port.to_string())].join(":")
-    );
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        eprintln!("New connection from {}", stream.peer_addr().unwrap());
-        handle_connection(stream, &config);
+    let mut handlers = Vec::new();
+    for addr in addrs {
+        let handler = spawn_listener(addr);
+        handlers.push(handler);
+    }
+    for handler in handlers {
+        handler.join().unwrap();
     }
 }
 
+fn spawn_listener(addr: SocketAddr) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name(format!("webserver: {} listener", addr))
+        .spawn(move || {
+            let config = Config::new(env::args()).unwrap();
+
+            let listener = TcpListener::bind(addr).unwrap();
+            println!("Server is listening on {}", addr);
+
+            for stream in listener.incoming() {
+                let stream = stream.unwrap();
+                handle_connection(stream, &config);
+            }
+        })
+        .unwrap()
+}
+
 fn handle_connection(mut stream: TcpStream, config: &Config) {
+    eprintln!("New connection from {}", stream.peer_addr().unwrap());
+
     loop {
         let mut close_connection = false;
         let response = match read_request(&mut stream, config) {

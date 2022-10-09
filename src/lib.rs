@@ -2,7 +2,8 @@ pub mod http;
 pub mod parser;
 
 use std::ffi::OsStr;
-use std::fs::canonicalize;
+use std::fs::{canonicalize, read_dir};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::{env, io, panic};
 
@@ -82,4 +83,31 @@ pub fn match_file_type(filename: &Path) -> &str {
         Some("json") => "application/json",
         _ => "application/octet-stream",
     }
+}
+
+pub fn get_addrs(config: &Config) -> Vec<SocketAddr> {
+    let mut addrs = Vec::new();
+    for hostname in get_hostnames(&config.directory) {
+        let addr: SocketAddr = ((hostname, config.port))
+            .to_socket_addrs()
+            .expect("Invalid IP address")
+            .next()
+            .unwrap();
+        addrs.push(addr);
+    }
+    addrs
+}
+
+fn get_hostnames(root: &str) -> Vec<String> {
+    let mut hosts = Vec::new();
+    for entry in read_dir(root).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            let sub_dir = entry.file_name().into_string().unwrap();
+            eprintln!("host: {}", sub_dir);
+            hosts.push(sub_dir);
+        }
+    }
+    hosts
 }
