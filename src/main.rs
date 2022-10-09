@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{env, io, thread};
 
@@ -11,34 +10,28 @@ use webserver::{verify_uri, Config};
 
 fn main() {
     let config = Config::new(env::args()).unwrap();
+    let config = &config;
 
-    let addrs = get_addrs(&config);
+    let addrs = get_addrs(config);
 
-    let mut handlers = Vec::new();
-    for addr in addrs {
-        let handler = spawn_listener(addr);
-        handlers.push(handler);
-    }
-    for handler in handlers {
-        handler.join().unwrap();
-    }
+    thread::scope(|scope| {
+        for addr in addrs {
+            thread::Builder::new()
+                .name(format!("webserver: {} listener", addr))
+                .spawn_scoped(scope, move || listen(addr, config))
+                .unwrap();
+        }
+    });
 }
 
-fn spawn_listener(addr: SocketAddr) -> JoinHandle<()> {
-    thread::Builder::new()
-        .name(format!("webserver: {} listener", addr))
-        .spawn(move || {
-            let config = Config::new(env::args()).unwrap();
-
-            let listener = TcpListener::bind(addr).unwrap();
-            println!("Server is listening on {}", addr);
-
-            for stream in listener.incoming() {
-                let stream = stream.unwrap();
-                handle_connection(stream, &config);
-            }
-        })
-        .unwrap()
+fn listen(addr: SocketAddr, config: &Config) {
+    let listener = TcpListener::bind(addr).unwrap();
+    println!("Server is listening on {}", addr);
+    
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+        handle_connection(stream, &config);
+    }
 }
 
 fn handle_connection(mut stream: TcpStream, config: &Config) {
