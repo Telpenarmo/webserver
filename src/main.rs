@@ -1,12 +1,10 @@
-use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 use std::{env, io, thread};
 
 use webserver::http::{Request, Response, Status};
-use webserver::utils::match_file_type;
-use webserver::{get_addrs, parser, UriStatus};
+use webserver::{get_addrs, get_error_page, parser, UriStatus};
 use webserver::{verify_uri, Config};
 
 fn main() {
@@ -186,23 +184,22 @@ fn handle_request(request: Request, config: &Config) -> (Response, bool) {
     match uri_status {
         UriStatus::Ok(path_buf) => {
             let path = path_buf.as_path();
-            let mut file = File::open(path).unwrap_or_else(|err| panic!("file::open: {}", err));
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).unwrap();
-            response.add_content(buffer);
-            response.set_header("Content-Type".into(), match_file_type(path).into());
-        }
-        UriStatus::NonExistent => {
-            response.add_content("<h1>404</h1><p>Requested page was not found.</p>".into())
-        }
-        UriStatus::OutOfRange => {
-            response.add_content("<h1>404</h1><p>Requested resource cannot be accessed.</p>".into())
+            response.load_file(path);
         }
         UriStatus::Directory => {
             let sep = if request.path.ends_with("/") { "" } else { "/" };
             let value = ["http://", &host, &request.path, sep, "index.html"].concat();
             eprintln!("{}", value);
             response.set_header("Location".into(), value.into())
+        }
+        _ => {
+            let error_file = get_error_page(&status, &config);
+            if let Some(path) = error_file {
+                eprintln!("loading error page from file");
+                response.load_file(path.as_path())
+            } else {
+                response.add_content("unknown error".into());
+            }
         }
     };
 

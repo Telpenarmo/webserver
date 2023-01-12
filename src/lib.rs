@@ -7,6 +7,8 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::{env, io, panic};
 
+use http::Status;
+
 pub struct Config {
     pub directory: String,
     pub max_headers_number: usize,
@@ -48,7 +50,7 @@ pub enum UriStatus {
 pub fn verify_uri(dir: &str, domain: &str, uri: &str) -> UriStatus {
     let rel_dir_path = [dir, domain].join("/");
     let rel_res_path = rel_dir_path.clone() + uri;
-    eprintln!("{}", rel_res_path);
+    eprintln!("requested resource: {}", rel_res_path);
     let dir_path = match canonicalize(rel_dir_path) {
         Ok(path) => path,
         Err(err) => return UriStatus::NonExistent,
@@ -98,4 +100,15 @@ fn get_hostnames(root: &str) -> Vec<String> {
         }
     }
     hosts
+}
+
+pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {
+    let file_path = status.code().to_string() + ".html";
+    let file = [config.directory.clone(), file_path].join("/");
+    let path = PathBuf::from(file);
+    if path.try_exists().unwrap() {
+        Some(path)
+    } else {
+        None
+    }
 }

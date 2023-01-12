@@ -1,4 +1,9 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+
+use crate::utils::{match_file_type, ResultExtension};
 
 pub struct Request {
     pub method: String,
@@ -66,6 +71,15 @@ impl Response {
         self.headers.insert("Content-Length".into(), length);
         self.content = Some(content);
     }
+
+    pub fn load_file(&mut self, path: &Path) {
+        let mut file = File::open(path).unwrap_with_note("file::open");
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .unwrap_with_note("read_to_end");
+        self.add_content(buffer);
+        self.set_header("Content-Type".into(), match_file_type(path).into());
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -83,7 +97,7 @@ pub enum Status {
 }
 
 impl Status {
-    fn code(&self) -> u16 {
+    pub fn code(&self) -> u16 {
         match self {
             Status::Ok => 200,
             Status::Moved => 301,
