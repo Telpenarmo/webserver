@@ -49,7 +49,10 @@ pub fn verify_uri(dir: &str, domain: &str, uri: &str) -> UriStatus {
     let rel_dir_path = [dir, domain].join("/");
     let rel_res_path = rel_dir_path.clone() + uri;
     eprintln!("{}", rel_res_path);
-    let dir_path = canonicalize(rel_dir_path).unwrap();
+    let dir_path = match canonicalize(rel_dir_path) {
+        Ok(path) => path,
+        Err(err) => return UriStatus::NonExistent,
+    };
     let res_path = match canonicalize(rel_res_path) {
         Ok(v) => v,
         Err(err) => {
