@@ -5,7 +5,8 @@ use std::time::Duration;
 use std::{env, io, thread};
 
 use webserver::http::{Request, Response, Status};
-use webserver::{get_addrs, match_file_type, parser, UriStatus};
+use webserver::utils::match_file_type;
+use webserver::{get_addrs, parser, UriStatus};
 use webserver::{verify_uri, Config};
 
 fn main() {
@@ -27,7 +28,7 @@ fn main() {
 fn listen(addr: SocketAddr, config: &Config) {
     let listener = TcpListener::bind(addr).unwrap();
     println!("Server is listening on {}", addr);
-    
+
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         handle_connection(stream, &config);

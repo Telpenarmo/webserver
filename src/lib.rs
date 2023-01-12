@@ -1,10 +1,10 @@
 pub mod http;
 pub mod parser;
+pub mod utils;
 
-use std::ffi::OsStr;
 use std::fs::{canonicalize, read_dir};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{env, io, panic};
 
 pub struct Config {
@@ -71,21 +71,6 @@ pub fn verify_uri(dir: &str, domain: &str, uri: &str) -> UriStatus {
         return UriStatus::Directory; // 301
     }
     UriStatus::Ok(res_path)
-}
-
-pub fn match_file_type(filename: &Path) -> &str {
-    match filename.extension().and_then(OsStr::to_str) {
-        Some("txt") => "text/plain, charset=utf-8",
-        Some("html") => "text/html, charset=utf-8",
-        Some("css") => "text/css",
-        Some("js") => "application/javascript",
-        Some("jpg") => "image/jpeg",
-        Some("jpeg") => "image/jpeg",
-        Some("png") => "image/jpeg",
-        Some("pdf") => "application/pdf",
-        Some("json") => "application/json",
-        _ => "application/octet-stream",
-    }
 }
 
 pub fn get_addrs(config: &Config) -> Vec<SocketAddr> {
