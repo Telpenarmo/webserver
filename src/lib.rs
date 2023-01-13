@@ -4,13 +4,13 @@ pub mod utils;
 
 use std::fs::{canonicalize, read_dir};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, io, panic};
 
 use http::Status;
 
 pub struct Config {
-    pub directory: String,
+    pub directory: PathBuf,
     pub max_headers_number: usize,
     pub port: u16,
     pub keep_alive: u8,
@@ -29,7 +29,7 @@ impl Config {
         };
         let directory = match args.next() {
             None => return Err(usage),
-            Some(arg) => arg,
+            Some(arg) => PathBuf::from(arg)
         };
         Ok(Config {
             directory,
@@ -47,13 +47,17 @@ pub enum UriStatus {
     Directory,
 }
 
-pub fn verify_uri(dir: &str, domain: &str, uri: &str) -> UriStatus {
-    let rel_dir_path = [dir, domain].join("/");
-    let rel_res_path = rel_dir_path.clone() + uri;
-    eprintln!("requested resource: {}", rel_res_path);
+pub fn verify_uri(dir: &Path, domain: &str, uri: &str) -> UriStatus {
+    let mut rel_dir_path = dir.to_path_buf();
+    rel_dir_path.push(domain);
+
+    let mut rel_res_path = rel_dir_path.clone();
+    rel_res_path.push(uri);
+    eprintln!("requested resource: {}", rel_res_path.display());
+    
     let dir_path = match canonicalize(rel_dir_path) {
         Ok(path) => path,
-        Err(err) => return UriStatus::NonExistent,
+        Err(_err) => return UriStatus::NonExistent,
     };
     let res_path = match canonicalize(rel_res_path) {
         Ok(v) => v,
@@ -88,7 +92,7 @@ pub fn get_addrs(config: &Config) -> Vec<SocketAddr> {
     addrs
 }
 
-fn get_hostnames(root: &str) -> Vec<String> {
+fn get_hostnames(root: &Path) -> Vec<String> {
     let mut hosts = Vec::new();
     for entry in read_dir(root).unwrap() {
         let entry = entry.unwrap();
@@ -104,8 +108,11 @@ fn get_hostnames(root: &str) -> Vec<String> {
 
 pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {
     let file_path = status.code().to_string() + ".html";
-    let file = [config.directory.clone(), file_path].join("/");
-    let path = PathBuf::from(file);
+    let file_path = PathBuf::from(file_path);
+
+    let mut path = config.directory.clone();
+    path.push(file_path);
+
     if path.try_exists().unwrap() {
         Some(path)
     } else {
