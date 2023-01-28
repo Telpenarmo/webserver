@@ -6,7 +6,7 @@ pub enum Error {
     Syntax,
 }
 
-pub fn try_parse(headers_size: usize, buffer: &mut Vec<u8>) -> Result<(Request,usize), Error> {
+pub fn try_parse(headers_size: usize, buffer: &mut [u8]) -> Result<(Request, usize), Error> {
     let mut headers = vec![httparse::EMPTY_HEADER; headers_size];
     let mut req = httparse::Request::new(&mut headers);
     match req.parse(buffer) {

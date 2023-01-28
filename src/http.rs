@@ -16,8 +16,8 @@ impl Request {
     pub fn new(req: httparse::Request) -> Request {
         let headers: HashMap<_, _> = req
             .headers
-            .into_iter()
-            .map(|header| (header.name.to_owned(), header.value.to_owned()))
+            .iter_mut()
+            .map(|header| (header.name.into(), header.value.into()))
             .collect();
         Request {
             method: req.method.unwrap().to_owned(),
