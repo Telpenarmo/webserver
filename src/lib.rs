@@ -1,13 +1,32 @@
 pub mod http;
 pub mod parser;
+pub mod static_server;
 pub mod utils;
 
-use std::fs::{canonicalize, read_dir};
+use std::collections::HashMap;
+use std::env;
+use std::fs::{canonicalize, read_dir, File};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
-use std::{env, io, panic};
 
 use http::Status;
+
+pub struct ServerState<'a> {
+    pub config: Config,
+    pub hosts: HashMap<String, HostState<'a>>,
+}
+
+pub struct HostState<'a> {
+    pub handler: DomainHandler,
+    pub config: &'a Config,
+    pub address: SocketAddr,
+    pub hostname: String,
+}
+
+pub enum DomainHandler {
+    StaticDir(PathBuf),
+    Executable(File),
+}
 
 pub struct Config {
     pub directory: PathBuf,
@@ -29,7 +48,14 @@ impl Config {
         };
         let directory = match args.next() {
             None => return Err(usage),
-            Some(arg) => PathBuf::from(arg)
+            Some(arg) => {
+                let path = PathBuf::from(arg);
+                if path.try_exists().unwrap() {
+                    canonicalize(path).unwrap()
+                } else {
+                    return Err("Directory not found.".to_string());
+                }
+            }
         };
         Ok(Config {
             directory,
@@ -40,59 +66,27 @@ impl Config {
     }
 }
 
-pub enum UriStatus {
-    Ok(PathBuf),
-    NonExistent,
-    OutOfRange,
-    Directory,
-}
-
-pub fn verify_uri(dir: &Path, domain: &str, uri: &str) -> UriStatus {
-    let mut rel_dir_path = dir.to_path_buf();
-    rel_dir_path.push(domain);
-
-    let mut rel_res_path = rel_dir_path.clone();
-    rel_res_path.push(uri);
-    eprintln!("requested resource: {}", rel_res_path.display());
-    
-    let dir_path = match canonicalize(rel_dir_path) {
-        Ok(path) => path,
-        Err(_err) => return UriStatus::NonExistent,
-    };
-    let res_path = match canonicalize(rel_res_path) {
-        Ok(v) => v,
-        Err(err) => {
-            return match err.kind() {
-                io::ErrorKind::NotFound => UriStatus::NonExistent, // 404
-                // io::ErrorKind::FilenameTooLong => None,
-                _ => panic!("canonicalize: {}", err),
-            };
-        }
-    };
-
-    if !res_path.starts_with(dir_path) {
-        return UriStatus::OutOfRange; // 403
-    }
-    if res_path.is_dir() {
-        return UriStatus::Directory; // 301
-    }
-    UriStatus::Ok(res_path)
-}
-
-pub fn get_addrs(config: &Config) -> Vec<SocketAddr> {
-    let mut addrs = Vec::new();
-    for hostname in get_hostnames(&config.directory) {
-        let addr: SocketAddr = ((hostname, config.port))
+pub fn get_hosts(config: &Config) -> Vec<HostState> {
+    let mut hosts = Vec::new();
+    for (dir, hostname) in get_hostnames(&config.directory) {
+        let address: SocketAddr = (hostname.clone(), config.port)
             .to_socket_addrs()
             .expect("Invalid IP address")
             .next()
             .unwrap();
-        addrs.push(addr);
+        let dir = canonicalize(dir).unwrap();
+        let host = HostState {
+            handler: DomainHandler::StaticDir(dir),
+            config,
+            address,
+            hostname,
+        };
+        hosts.push(host);
     }
-    addrs
+    hosts
 }
 
-fn get_hostnames(root: &Path) -> Vec<String> {
+fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
     let mut hosts = Vec::new();
     for entry in read_dir(root).unwrap() {
         let entry = entry.unwrap();
@@ -100,7 +94,7 @@ fn get_hostnames(root: &Path) -> Vec<String> {
         if path.is_dir() {
             let sub_dir = entry.file_name().into_string().unwrap();
             eprintln!("host: {}", sub_dir);
-            hosts.push(sub_dir);
+            hosts.push((path, sub_dir));
         }
     }
     hosts

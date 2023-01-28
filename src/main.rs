@@ -1,46 +1,51 @@
+use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 use std::{env, io, thread};
 
 use webserver::http::{Request, Response, Status};
-use webserver::{get_addrs, get_error_page, parser, UriStatus};
-use webserver::{verify_uri, Config};
+use webserver::*;
+use webserver::{Config, DomainHandler, ServerState};
 
 fn main() {
     let config = Config::new(env::args()).unwrap();
-    let config = &config;
-
-    let addrs = get_addrs(config);
+    let hosts = HashMap::new();
+    let mut server_state = ServerState { config, hosts };
+    let hosts = get_hosts(&server_state.config);
+    for host in hosts {
+        server_state.hosts.insert(host.hostname.clone(), host);
+    }
+    let server_state = &server_state;
 
     thread::scope(|scope| {
-        for addr in addrs {
+        for host in server_state.hosts.values() {
             thread::Builder::new()
-                .name(format!("webserver: {} listener", addr))
-                .spawn_scoped(scope, move || listen(addr, config))
+                .name(format!("webserver: {} listener", host.address))
+                .spawn_scoped(scope, move || listen(host))
                 .unwrap();
         }
     });
 }
 
-fn listen(addr: SocketAddr, config: &Config) {
-    let listener = TcpListener::bind(addr).unwrap();
-    println!("Server is listening on {}", addr);
+fn listen(host: &HostState) {
+    let listener = TcpListener::bind(host.address).unwrap();
+    println!("Server is listening on {}", host.address);
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &config);
+        handle_connection(host, stream);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, config: &Config) {
+fn handle_connection(host: &HostState, mut stream: TcpStream) {
     eprintln!("New connection from {}", stream.peer_addr().unwrap());
 
     loop {
         let mut close_connection = false;
-        let response = match read_request(&mut stream, config) {
+        let response = match read_request(&mut stream, host.config) {
             Ok(request) => {
-                let (response, close) = handle_request(request, config);
+                let (response, close) = handle_request(host, request);
                 close_connection = close;
                 Some(response)
             }
@@ -86,7 +91,7 @@ enum ReadError {
 }
 
 fn get_res_or_partial(
-    buffer: &mut Vec<u8>,
+    buffer: &mut [u8],
     max_headers_count: usize,
 ) -> Option<Result<Request, ReadError>> {
     let mut headers_size = 16;
@@ -145,68 +150,16 @@ fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, Read
     }
 }
 
-fn handle_request(request: Request, config: &Config) -> (Response, bool) {
-    let mut bad_request = (Response::new(Status::BadRequest), false);
-    let host = match request.headers.get("Host") {
-        Some(v) => v,
-        None => {
-            bad_request.0.add_content("Host header is required".into());
-            return bad_request;
-        }
-    };
-    let host = match String::from_utf8(host.to_vec()) {
-        Ok(h) => h,
-        Err(err) => {
-            bad_request
-                .0
-                .add_content(format!("Utf-8 error: {}", err.utf8_error()).into());
-            return bad_request;
-        }
-    };
-    let hostname = host.split_once(':').unwrap().0;
-    if request.method.as_str() != "GET" {
-        let mut resp = Response::new(Status::MethodNotAllowed);
-        resp.set_header("Allow".to_owned(), "GET".to_owned().into_bytes());
-        return (resp, false);
-    }
-
-    let uri_status = verify_uri(&config.directory, &hostname, &request.path);
-
-    let status = match uri_status {
-        UriStatus::Ok(_) => Status::Ok,
-        UriStatus::NonExistent => Status::NotFound,
-        UriStatus::OutOfRange => Status::Forbidden,
-        UriStatus::Directory => Status::Moved,
-    };
-
-    let mut response = Response::new(status);
-
-    match uri_status {
-        UriStatus::Ok(path_buf) => {
-            let path = path_buf.as_path();
-            response.load_file(path);
-        }
-        UriStatus::Directory => {
-            let sep = if request.path.ends_with("/") { "" } else { "/" };
-            let value = ["http://", &host, &request.path, sep, "index.html"].concat();
-            eprintln!("{}", value);
-            response.set_header("Location".into(), value.into())
-        }
-        _ => {
-            let error_file = get_error_page(&status, &config);
-            if let Some(path) = error_file {
-                eprintln!("loading error page from file");
-                response.load_file(path.as_path())
-            } else {
-                response.add_content("unknown error".into());
-            }
-        }
-    };
-
+fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
     let close = request
         .headers
         .get("close")
         .map_or(false, |v| v.eq("close".as_bytes()));
+
+    let response = match &host_data.handler {
+        DomainHandler::StaticDir(dir) => static_server::handle_request(request, host_data, dir),
+        DomainHandler::Executable(_) => panic!("dynamic http servers not yet supported"),
+    };
 
     (response, close)
 }
