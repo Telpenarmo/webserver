@@ -1,6 +1,9 @@
-use std::{fs::canonicalize, io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
-use crate::{http::*, *};
+use crate::{get_error_page, http::*, Config, HostState};
 
 pub fn handle_request(request: Request, server_data: &HostState, content_dir: &Path) -> Response {
     if request.method.as_str() != "GET" {
@@ -17,23 +20,22 @@ pub fn handle_request(request: Request, server_data: &HostState, content_dir: &P
 
     handle_get_request(&request, server_data, content_dir, rel_res_path)
 }
+
 fn handle_get_request(
     _request: &Request,
     server_data: &HostState,
     content_dir: &Path,
     rel_res_path: PathBuf,
 ) -> Response {
-    let res_path = match canonicalize(rel_res_path) {
+    let res_path = match std::fs::canonicalize(rel_res_path) {
         Ok(path) => path,
-        Err(err) => {
-            match err.kind() {
-                io::ErrorKind::NotFound => {
-                    return load_error(Status::NotFound, server_data.config);
-                }
-                // io::ErrorKind::FilenameTooLong => None,
-                _ => panic!("canonicalize: {}", err),
-            };
-        }
+        Err(err) => match err.kind() {
+            io::ErrorKind::NotFound => return load_error(Status::NotFound, server_data.config),
+            io::ErrorKind::PermissionDenied => {
+                return load_error(Status::Forbidden, server_data.config);
+            }
+            _ => panic!("canonicalize: {}", err),
+        },
     };
 
     match res_path.strip_prefix(content_dir) {
@@ -42,7 +44,9 @@ fn handle_get_request(
                 let mut resp = Response::new(Status::Moved);
                 let port = server_data.config.port.to_string();
                 let host = server_data.hostname.to_owned() + ":" + &port;
-                let path = rel_res_path.to_str().unwrap();
+                let Some(path) = rel_res_path.to_str() else {
+                    return load_error(Status::BadRequest, server_data.config);
+                };
                 let mut value = PathBuf::new();
                 value.extend(["http://", &host, path, "index.html"]);
                 let value: String = value.to_string_lossy().to_string();

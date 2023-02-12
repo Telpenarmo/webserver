@@ -50,10 +50,9 @@ impl Config {
             None => return Err(usage),
             Some(arg) => {
                 let path = PathBuf::from(arg);
-                if path.try_exists().unwrap() {
-                    canonicalize(path).unwrap()
-                } else {
-                    return Err("Directory not found.".to_string());
+                match canonicalize(path) {
+                    Ok(path) => path,
+                    Err(err) => return Err(format!("Invalid directory: {}", err)),
                 }
             }
         };
@@ -74,7 +73,6 @@ pub fn get_hosts(config: &Config) -> Vec<HostState> {
             .expect("Invalid IP address")
             .next()
             .unwrap();
-        let dir = canonicalize(dir).unwrap();
         let host = HostState {
             handler: DomainHandler::StaticDir(dir),
             config,
@@ -91,8 +89,13 @@ fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
     for entry in read_dir(root).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
+
         if path.is_dir() {
             let sub_dir = entry.file_name().into_string().unwrap();
+            let Ok(path) = path.canonicalize() else {
+                eprintln!("Error accessing {} subdirectory; ignoring.", sub_dir);
+                continue;
+            };
             eprintln!("host: {}", sub_dir);
             hosts.push((path, sub_dir));
         }
@@ -107,7 +110,7 @@ pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {
     let mut path = config.directory.clone();
     path.push(file_path);
 
-    if path.try_exists().unwrap() {
+    if path.exists() {
         Some(path)
     } else {
         None

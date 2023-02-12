@@ -8,8 +8,11 @@ use webserver::http::{Request, Response, Status};
 use webserver::*;
 use webserver::{Config, DomainHandler, ServerState};
 
-fn main() {
-    let config = Config::new(env::args()).unwrap();
+fn main() -> Result<(), String> {
+    let config = match Config::new(env::args()) {
+        Ok(config) => config,
+        Err(msg) => return Err(msg),
+    };
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
     let hosts = get_hosts(&server_state.config);
@@ -26,6 +29,8 @@ fn main() {
                 .unwrap();
         }
     });
+
+    Ok(())
 }
 
 fn listen(host: &HostState) {
@@ -33,8 +38,10 @@ fn listen(host: &HostState) {
     println!("Server is listening on {}", host.address);
 
     for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        handle_connection(host, stream);
+        match stream {
+            Ok(stream) => handle_connection(host, stream),
+            Err(err) => eprintln!("connection failed: {}", err),
+        }
     }
 }
 
@@ -107,14 +114,21 @@ fn get_res_or_partial(
             }
             Err(parser::Error::Syntax) => break Some(Err(ReadError::BadSyntax)), // 400
             Ok((req, _s)) => {
-                let _len: u32 = req
+                let content_length = req
                     .headers
                     .get("Content-Length")
                     .map(|v| match String::from_utf8(v.to_owned()) {
-                        Ok(s) => s.parse().unwrap(),
-                        Err(_) => panic!(""),
+                        Ok(s) => match s.parse() {
+                            Ok(d) => Ok(d),
+                            Err(_) => Err(ReadError::BadSyntax),
+                        },
+                        Err(_) => Err(ReadError::BadSyntax),
                     })
-                    .unwrap_or_default();
+                    .unwrap_or(Ok(0));
+                let _content_length: u32 = match content_length {
+                    Ok(len) => len,
+                    Err(err) => break Some(Err(err)),
+                };
                 break Some(Ok(req));
             }
         }
