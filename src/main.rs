@@ -15,7 +15,7 @@ fn main() -> Result<(), String> {
     };
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
-    let hosts = get_hosts(&server_state.config);
+    let hosts = get_hosts(&server_state.config)?;
     for host in hosts {
         server_state.hosts.insert(host.hostname.clone(), host);
     }
@@ -26,7 +26,7 @@ fn main() -> Result<(), String> {
             thread::Builder::new()
                 .name(format!("webserver: {} listener", host.address))
                 .spawn_scoped(scope, move || listen(host))
-                .unwrap();
+                .expect("Failed to spawn listener thread.");
         }
     });
 
@@ -34,7 +34,7 @@ fn main() -> Result<(), String> {
 }
 
 fn listen(host: &HostState) {
-    let listener = TcpListener::bind(host.address).unwrap();
+    let listener = TcpListener::bind(host.address).expect("Failed to bind an address.");
     println!("Server is listening on {}", host.address);
 
     for stream in listener.incoming() {
@@ -46,7 +46,14 @@ fn listen(host: &HostState) {
 }
 
 fn handle_connection(host: &HostState, mut stream: TcpStream) {
-    eprintln!("New connection from {}", stream.peer_addr().unwrap());
+    let peer = match stream.peer_addr() {
+        Ok(addr) => addr,
+        Err(err) => {
+            eprintln!("Error checking peer address: {}", err);
+            return;
+        }
+    };
+    eprintln!("New connection from {}", peer);
 
     loop {
         let mut close_connection = false;
@@ -62,7 +69,6 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             }
             Err(ReadError::Timeout) => {
                 let resp = Response::new(Status::RequestTimeout);
-                let peer = stream.peer_addr().unwrap();
                 eprintln!("Timeout for {}", peer);
                 close_connection = true;
                 Some(resp)
@@ -71,23 +77,26 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             Err(ReadError::TooManyHeaders) => Some(Response::new(Status::BadRequest)),
         };
         if let Some(mut response) = response {
-            let connection_header = match close_connection {
-                true => "close",
-                false => "keep-alive",
-            };
-            response.set_header("Connection".into(), connection_header.into());
+            write_connection_header(close_connection, &mut response);
 
             let response = response.render();
             stream
                 .write_all(&response)
-                .unwrap_or_else(|err| panic!("writing error: {}", err));
+                .unwrap_or_else(|err| eprintln!("Error writing an output: {}", err));
         }
         if close_connection {
-            let peer = stream.peer_addr().unwrap();
             eprintln!("{} closed the connection.", peer);
             return;
         }
     }
+}
+
+fn write_connection_header(close: bool, response: &mut Response) {
+    let connection_header = match close {
+        true => "close",
+        false => "keep-alive",
+    };
+    response.set_header("Connection".into(), connection_header.into());
 }
 
 enum ReadError {
@@ -165,14 +174,20 @@ fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, Read
 }
 
 fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
-    let close = request
+    let mut close = request
         .headers
         .get("close")
         .map_or(false, |v| v.eq("close".as_bytes()));
 
     let response = match &host_data.handler {
         DomainHandler::StaticDir(dir) => static_server::handle_request(request, host_data, dir),
-        DomainHandler::Executable(_) => panic!("dynamic http servers not yet supported"),
+        DomainHandler::Executable(_) => {
+            close = true;
+            Response::with_content(
+                Status::NotImplemented,
+                "Dynamic http servers not yet supported".into(),
+            )
+        }
     };
 
     (response, close)

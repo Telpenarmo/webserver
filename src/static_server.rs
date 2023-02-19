@@ -34,7 +34,7 @@ fn handle_get_request(
             io::ErrorKind::PermissionDenied => {
                 return load_error(Status::Forbidden, server_data.config);
             }
-            _ => panic!("canonicalize: {}", err),
+            _ => return server_error(err.to_string()),
         },
     };
 

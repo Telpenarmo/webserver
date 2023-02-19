@@ -65,33 +65,40 @@ impl Config {
     }
 }
 
-pub fn get_hosts(config: &Config) -> Vec<HostState> {
-    let mut hosts = Vec::new();
-    for (dir, hostname) in get_hostnames(&config.directory) {
+pub fn get_hosts(config: &Config) -> Result<Vec<HostState>, String> {
+    let mut hostnames = get_hostnames(&config.directory)?;
+    let hosts = hostnames.drain(..).map(|(dir, hostname)| {
         let address: SocketAddr = (hostname.clone(), config.port)
             .to_socket_addrs()
             .expect("Invalid IP address")
             .next()
             .unwrap();
-        let host = HostState {
+        HostState {
             handler: DomainHandler::StaticDir(dir),
             config,
             address,
             hostname,
-        };
-        hosts.push(host);
-    }
-    hosts
+        }
+    });
+    Ok(hosts.collect())
 }
 
-fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
+fn get_hostnames(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
     let mut hosts = Vec::new();
-    for entry in read_dir(root).unwrap() {
-        let entry = entry.unwrap();
+    let read_dir = match read_dir(root) {
+        Ok(dir) => dir,
+        Err(err) => return Err(format!("Error accessing directory: {}", err)),
+    };
+
+    for entry in read_dir {
+        let Ok(entry) = entry else { continue };
         let path = entry.path();
 
         if path.is_dir() {
-            let sub_dir = entry.file_name().into_string().unwrap();
+            let Ok(sub_dir) = entry.file_name().into_string() else {
+                eprintln!("Non-Unicode file_name; ignoring.");
+                continue;
+            };
             let Ok(path) = path.canonicalize() else {
                 eprintln!("Error accessing {} subdirectory; ignoring.", sub_dir);
                 continue;
@@ -100,7 +107,7 @@ fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
             hosts.push((path, sub_dir));
         }
     }
-    hosts
+    Ok(hosts)
 }
 
 pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {

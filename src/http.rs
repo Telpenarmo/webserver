@@ -43,6 +43,12 @@ impl Response {
         }
     }
 
+    pub fn with_content(status: Status, content: Vec<u8>) -> Response {
+        let mut resp = Response::new(status);
+        resp.add_content(content);
+        resp
+    }
+
     pub fn render(mut self) -> Vec<u8> {
         let status_line = format!("HTTP/1.1 {}", self.status.code());
         let status_line = status_line.as_bytes().to_vec();
@@ -92,6 +98,7 @@ pub enum Status {
     MethodNotAllowed,
     RequestTimeout,
     RequestURITooLong,
+    InternalServerError,
     NotImplemented,
     HTTPVersionNotSupported,
 }
@@ -107,8 +114,14 @@ impl Status {
             Status::MethodNotAllowed => 405,
             Status::RequestTimeout => 408,
             Status::RequestURITooLong => 415,
+            Status::InternalServerError => 500,
             Status::NotImplemented => 501,
             Status::HTTPVersionNotSupported => 505,
         }
     }
+}
+
+pub fn server_error(msg: String) -> Response {
+    eprintln!("server error: {}", msg);
+    Response::with_content(Status::InternalServerError, "Internal server error.".into())
 }
