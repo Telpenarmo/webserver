@@ -56,7 +56,7 @@ impl Response {
         lines.push(status_line);
         let headers = self.headers.drain().map(Response::render_header);
         lines.extend(headers);
-        lines.push("\r\n".into());
+        lines.push(vec![]);
         if let Some(content) = self.content {
             lines.push(content);
         }
