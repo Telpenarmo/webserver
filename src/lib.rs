@@ -33,6 +33,7 @@ pub struct Config {
     pub max_headers_number: usize,
     pub port: u16,
     pub keep_alive: u8,
+    pub threads_per_connection: u8,
 }
 
 impl Config {
@@ -61,6 +62,7 @@ impl Config {
             max_headers_number: 512,
             port,
             keep_alive: 20,
+            threads_per_connection: 4,
         })
     }
 }

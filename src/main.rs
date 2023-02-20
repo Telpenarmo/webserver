@@ -4,15 +4,14 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 use std::{env, io, thread};
 
+use scoped_threadpool::Pool;
+
 use webserver::http::{Request, Response, Status};
 use webserver::*;
 use webserver::{Config, DomainHandler, ServerState};
 
 fn main() -> Result<(), String> {
-    let config = match Config::new(env::args()) {
-        Ok(config) => config,
-        Err(msg) => return Err(msg),
-    };
+    let config = Config::new(env::args())?;
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
     let hosts = get_hosts(&server_state.config)?;
@@ -25,7 +24,7 @@ fn main() -> Result<(), String> {
         for host in server_state.hosts.values() {
             thread::Builder::new()
                 .name(format!("webserver: {} listener", host.address))
-                .spawn_scoped(scope, move || listen(host))
+                .spawn_scoped(scope, || listen(host))
                 .expect("Failed to spawn listener thread.");
         }
     });
@@ -35,14 +34,20 @@ fn main() -> Result<(), String> {
 
 fn listen(host: &HostState) {
     let listener = TcpListener::bind(host.address).expect("Failed to bind an address.");
-    println!("Server is listening on {}", host.address);
+    println!(
+        "Server is listening on http://{}:{} (http://{})",
+        host.hostname, host.config.port, host.address
+    );
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => handle_connection(host, stream),
-            Err(err) => eprintln!("connection failed: {}", err),
+    let mut pool = Pool::new(host.config.threads_per_connection.into());
+    pool.scoped(|scope| {
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => scope.execute(|| handle_connection(host, stream)),
+                Err(err) => eprintln!("connection failed: {}", err),
+            }
         }
-    }
+    });
 }
 
 fn handle_connection(host: &HostState, mut stream: TcpStream) {
@@ -82,7 +87,11 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             let response = response.render();
             stream
                 .write_all(&response)
-                .unwrap_or_else(|err| eprintln!("Error writing an output: {}", err));
+                .unwrap_or_else(|err| eprintln!("Error writing response: {}", err));
+
+            stream
+                .flush()
+                .unwrap_or_else(|err| eprintln!("Error flushing response: {}", err))
         }
         if close_connection {
             eprintln!("{} closed the connection.", peer);
@@ -92,10 +101,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
 }
 
 fn write_connection_header(close: bool, response: &mut Response) {
-    let connection_header = match close {
-        true => "close",
-        false => "keep-alive",
-    };
+    let connection_header = if close { "close" } else { "keep-alive" };
     response.set_header("Connection".into(), connection_header.into());
 }
 

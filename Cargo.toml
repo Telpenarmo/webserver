@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 httparse = "1.7.1"
+scoped_threadpool = "0.1.9"
