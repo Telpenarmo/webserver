@@ -108,7 +108,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
 
 fn write_connection_header(close: bool, response: &mut Response) {
     let connection_header = if close { "close" } else { "keep-alive" };
-    response.set_header("Connection".into(), connection_header.into());
+    response.set_header("Connection", connection_header);
 }
 
 enum ReadError {
@@ -197,7 +197,7 @@ fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
             close = true;
             Response::with_content(
                 Status::NotImplemented,
-                "Dynamic http servers not yet supported".into(),
+                "Dynamic http servers not yet supported",
             )
         }
     };

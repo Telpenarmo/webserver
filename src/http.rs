@@ -43,9 +43,12 @@ impl Response {
         }
     }
 
-    pub fn with_content(status: Status, content: Vec<u8>) -> Response {
+    pub fn with_content<C>(status: Status, content: C) -> Response
+    where
+        C: Into<Vec<u8>>,
+    {
         let mut resp = Response::new(status);
-        resp.add_content(content);
+        resp.add_content(content.into());
         resp
     }
 
@@ -65,16 +68,24 @@ impl Response {
 
     fn render_header((name, value): (String, Vec<u8>)) -> Vec<u8> {
         let new_value = unsafe { String::from_utf8_unchecked(value) };
-        format!("{}: {}", name, new_value).into_bytes()
+        format!("{}: {}", name, new_value).into()
     }
 
-    pub fn set_header(&mut self, name: String, value: Vec<u8>) {
-        self.headers.insert(name, value);
+    pub fn set_header<H, V>(&mut self, name: H, value: V)
+    where
+        H: Into<String>,
+        V: Into<Vec<u8>>,
+    {
+        self.headers.insert(name.into(), value.into());
     }
 
-    pub fn add_content(&mut self, content: Vec<u8>) {
-        let length: Vec<u8> = content.len().to_string().into_bytes();
-        self.headers.insert("Content-Length".into(), length);
+    pub fn add_content<C>(&mut self, content: C)
+    where
+        C: Into<Vec<u8>>,
+    {
+        let content = content.into();
+        let length = content.len().to_string();
+        self.headers.insert("Content-Length".into(), length.into());
         self.content = Some(content);
     }
 
@@ -84,7 +95,7 @@ impl Response {
         file.read_to_end(&mut buffer)
             .unwrap_with_note("read_to_end");
         self.add_content(buffer);
-        self.set_header("Content-Type".into(), match_file_type(path).into());
+        self.set_header("Content-Type", match_file_type(path));
     }
 }
 
@@ -123,5 +134,5 @@ impl Status {
 
 pub fn server_error(msg: String) -> Response {
     eprintln!("server error: {}", msg);
-    Response::with_content(Status::InternalServerError, "Internal server error.".into())
+    Response::with_content(Status::InternalServerError, "Internal server error.")
 }
