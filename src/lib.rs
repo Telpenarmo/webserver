@@ -52,7 +52,10 @@ impl Config {
             Some(arg) => {
                 let path = PathBuf::from(arg);
                 match canonicalize(path) {
-                    Ok(path) => path,
+                    Ok(path) => match path.read_dir() {
+                        Ok(_) => path,
+                        Err(err) => return Err(format!("Directory inaccessible: {}", err)),
+                    },
                     Err(err) => return Err(format!("Invalid directory: {}", err)),
                 }
             }
@@ -67,30 +70,28 @@ impl Config {
     }
 }
 
-pub fn get_hosts(config: &Config) -> Result<Vec<HostState>, String> {
-    let mut hostnames = get_hostnames(&config.directory)?;
+pub fn get_hosts(config: &Config) -> Vec<HostState> {
+    let mut hostnames = get_hostnames(&config.directory);
     let hosts = hostnames.drain(..).map(|(dir, hostname)| {
         let address: SocketAddr = (hostname.clone(), config.port)
             .to_socket_addrs()
-            .expect("Invalid IP address")
+            .map_err(|_err| eprintln!("Invalid IP address for host {}; ignoring", hostname))
+            .ok()?
             .next()
             .unwrap();
-        HostState {
+        Some(HostState {
             handler: DomainHandler::StaticDir(dir),
             config,
             address,
             hostname,
-        }
+        })
     });
-    Ok(hosts.collect())
+    hosts.flatten().collect()
 }
 
-fn get_hostnames(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
+fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
     let mut hosts = Vec::new();
-    let read_dir = match read_dir(root) {
-        Ok(dir) => dir,
-        Err(err) => return Err(format!("Error accessing directory: {}", err)),
-    };
+    let read_dir = read_dir(root).expect("Error accessing directory");
 
     for entry in read_dir {
         let Ok(entry) = entry else { continue };
@@ -105,11 +106,10 @@ fn get_hostnames(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
                 eprintln!("Error accessing {} subdirectory; ignoring.", sub_dir);
                 continue;
             };
-            eprintln!("host: {}", sub_dir);
             hosts.push((path, sub_dir));
         }
     }
-    Ok(hosts)
+    hosts
 }
 
 pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {

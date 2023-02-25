@@ -14,7 +14,7 @@ fn main() -> Result<(), String> {
     let config = Config::new(env::args())?;
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
-    let hosts = get_hosts(&server_state.config)?;
+    let hosts = get_hosts(&server_state.config);
     for host in hosts {
         server_state.hosts.insert(host.hostname.clone(), host);
     }
@@ -33,7 +33,13 @@ fn main() -> Result<(), String> {
 }
 
 fn listen(host: &HostState) {
-    let listener = TcpListener::bind(host.address).expect("Failed to bind an address.");
+    let listener = match TcpListener::bind(host.address) {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("Failed to bind an address ({}): {}.", host.address, err);
+            return;
+        }
+    };
     println!(
         "Server is listening on http://{}:{} (http://{})",
         host.hostname, host.config.port, host.address
