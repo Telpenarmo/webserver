@@ -41,25 +41,27 @@ fn handle_get_request(
     match res_path.strip_prefix(content_dir) {
         Ok(rel_res_path) => {
             if res_path.is_dir() {
-                let mut resp = Response::new(Status::Moved);
-                let port = server_data.config.port.to_string();
-                let host = server_data.hostname.to_owned() + ":" + &port;
-                let Some(path) = rel_res_path.to_str() else {
-                    return load_error(Status::BadRequest, server_data.config);
-                };
-                let mut value = PathBuf::new();
-                value.extend(["http://", &host, path, "index.html"]);
-                let value: String = value.to_string_lossy().to_string();
-                resp.set_header("Location", value);
-                return resp;
+                return redirect_dir(rel_res_path, server_data);
             }
-
             let mut resp = Response::new(Status::Ok);
             resp.load_file(&res_path);
             resp
         }
         Err(_) => load_error(Status::Forbidden, server_data.config),
     }
+}
+
+fn redirect_dir(path: &Path, server_data: &HostState) -> Response {
+    let mut resp = Response::new(Status::Moved);
+    let Some(path) = path.to_str() else {
+        return load_error(Status::BadRequest, server_data.config);
+    };
+    let index_location = format!(
+        "http://{}:{}{}/index.html",
+        server_data.hostname, server_data.config.port, path
+    );
+    resp.set_header("Location", index_location);
+    resp
 }
 
 fn load_error(status: Status, config: &Config) -> Response {
