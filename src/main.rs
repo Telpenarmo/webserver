@@ -192,7 +192,7 @@ fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
         .map_or(false, |v| v.eq("close".as_bytes()));
 
     let response = match &host_data.handler {
-        DomainHandler::StaticDir(dir) => static_server::handle_request(request, host_data, dir),
+        DomainHandler::StaticDir(data) => static_server::handle_request(request, host_data, data),
         DomainHandler::Executable(_) => {
             close = true;
             Response::with_content(

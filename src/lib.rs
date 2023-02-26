@@ -24,7 +24,7 @@ pub struct HostState<'a> {
 }
 
 pub enum DomainHandler {
-    StaticDir(PathBuf),
+    StaticDir(static_server::Data),
     Executable(File),
 }
 
@@ -79,8 +79,9 @@ pub fn get_hosts(config: &Config) -> Vec<HostState> {
             .ok()?
             .next()
             .unwrap();
+        let server_data = static_server::Data::new(dir);
         Some(HostState {
-            handler: DomainHandler::StaticDir(dir),
+            handler: DomainHandler::StaticDir(server_data),
             config,
             address,
             hostname,

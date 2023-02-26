@@ -1,24 +1,49 @@
 use std::{
+    collections::HashMap,
     io,
     path::{Path, PathBuf},
 };
 
 use crate::{get_error_page, http::*, Config, HostState};
 
-pub fn handle_request(request: Request, server_data: &HostState, content_dir: &Path) -> Response {
-    if request.method.as_str() != "GET" {
-        let mut resp = Response::new(Status::MethodNotAllowed);
-        resp.set_header("Allow", "GET");
-        return resp;
-    }
+pub struct Data {
+    content_dir: PathBuf,
+    handlers: HashMap<String, MethodHandler>,
+}
 
+impl Data {
+    pub fn new(content_dir: PathBuf) -> Data {
+        Data {
+            content_dir,
+            handlers: get_handlers(),
+        }
+    }
+}
+
+type MethodHandler = Box<dyn Fn(&Request, &HostState, &Path, PathBuf) -> Response + Sync>;
+
+pub fn handle_request(request: Request, server_data: &HostState, data: &Data) -> Response {
+    let Some(handler) = data.handlers.get(&request.method) else {
+            let mut resp = Response::new(Status::MethodNotAllowed);
+            let allowed_methods = data.handlers.keys().map(|s| &**s).collect::<Vec<_>>().join(", ");
+            resp.set_header("Allow", allowed_methods);
+            return resp;
+        };
+
+    let content_dir = &data.content_dir;
     let mut rel_res_path = content_dir.to_path_buf();
     let mut path = request.path.to_string();
     path.remove(0);
     rel_res_path.push(&path);
     eprintln!("requested resource: {}", rel_res_path.display());
 
-    handle_get_request(&request, server_data, content_dir, rel_res_path)
+    handler(&request, server_data, content_dir, rel_res_path)
+}
+
+fn get_handlers() -> HashMap<String, MethodHandler> {
+    let mut handlers: HashMap<String, MethodHandler> = HashMap::new();
+    handlers.insert("GET".into(), Box::new(handle_get_request));
+    handlers
 }
 
 fn handle_get_request(
