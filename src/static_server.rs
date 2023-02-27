@@ -68,9 +68,8 @@ fn handle_get_request(
             if res_path.is_dir() {
                 return redirect_dir(rel_res_path, server_data);
             }
-            let mut resp = Response::new(Status::Ok);
-            resp.load_file(&res_path);
-            resp
+            let resp = Response::new(Status::Ok);
+            resp.load_file(&res_path)
         }
         Err(_) => load_error(Status::Forbidden, server_data.config),
     }
@@ -97,6 +96,6 @@ fn load_error(status: Status, config: &Config) -> Response {
         response.load_file(path.as_path())
     } else {
         response.add_content("unknown error");
+        response
     }
-    response
 }

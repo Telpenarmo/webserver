@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::{collections::HashMap, fmt::Display};
 
-use crate::utils::{match_file_type, ResultExtension};
+use crate::utils::match_file_type;
 
 pub struct Request {
     pub method: String,
@@ -54,9 +54,8 @@ impl Response {
 
     pub fn render(mut self) -> Vec<u8> {
         let status_line = format!("HTTP/1.1 {}", self.status.code());
-        let status_line = status_line.as_bytes().to_vec();
         let mut lines = Vec::with_capacity(self.headers.len() + 3);
-        lines.push(status_line);
+        lines.push(status_line.into());
         let headers = self.headers.drain().map(Response::render_header);
         lines.extend(headers);
         lines.push(vec![]);
@@ -89,13 +88,19 @@ impl Response {
         self.content = Some(content);
     }
 
-    pub fn load_file(&mut self, path: &Path) {
-        let mut file = File::open(path).unwrap_with_note("file::open");
+    pub fn load_file(mut self, path: &Path) -> Response {
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(err) => return server_error(format!("Error on opening file: {}", err)),
+        };
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .unwrap_with_note("read_to_end");
+        match file.read_to_end(&mut buffer) {
+            Ok(_) => (),
+            Err(err) => return server_error(format!("Error on reading file: {}", err)),
+        };
         self.add_content(buffer);
         self.set_header("Content-Type", match_file_type(path));
+        self
     }
 }
 
@@ -132,7 +137,10 @@ impl Status {
     }
 }
 
-pub fn server_error(msg: String) -> Response {
+pub fn server_error<M>(msg: M) -> Response
+where
+    M: Display,
+{
     eprintln!("server error: {}", msg);
     Response::with_content(Status::InternalServerError, "Internal server error.")
 }

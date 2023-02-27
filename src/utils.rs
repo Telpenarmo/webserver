@@ -1,5 +1,4 @@
 use std::ffi::OsStr;
-use std::fmt::Debug;
 use std::path::Path;
 
 pub fn match_file_type(filename: &Path) -> &str {
@@ -14,18 +13,5 @@ pub fn match_file_type(filename: &Path) -> &str {
         Some("pdf") => "application/pdf",
         Some("json") => "application/json",
         _ => "application/octet-stream",
-    }
-}
-
-pub trait ResultExtension<T> {
-    fn unwrap_with_note(self, annotation: &str) -> T;
-}
-
-impl<T, E> ResultExtension<T> for Result<T, E>
-where
-    E: Debug,
-{
-    fn unwrap_with_note(self, annotation: &str) -> T {
-        self.unwrap_or_else(|err| panic!("{}: {:#?}", annotation, err))
     }
 }
