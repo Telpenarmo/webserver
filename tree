@@ -1,0 +1,16 @@
+webpages
+├── 403.html
+├── 404.html
+├── lab108-18
+│   ├── css
+│   │   └── bootstrap.min.css
+│   └── page.html
+└── localhost
+    ├── css
+    │   └── bootstrap.min.css
+    ├── file.bin
+    ├── index.html
+    ├── kupony.pdf
+    ├── page.html
+    ├── plik.txt
+    └── router-symbol.png
