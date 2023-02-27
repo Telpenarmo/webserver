@@ -102,6 +102,11 @@ impl Response {
         self.set_header("Content-Type", match_file_type(path));
         self
     }
+
+    pub fn to_head(mut self) -> Response {
+        self.content = None;
+        self
+    }
 }
 
 #[derive(Clone, Copy)]

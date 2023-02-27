@@ -43,6 +43,7 @@ pub fn handle_request(request: Request, server_data: &HostState, data: &Data) ->
 fn get_handlers() -> HashMap<String, MethodHandler> {
     let mut handlers: HashMap<String, MethodHandler> = HashMap::new();
     handlers.insert("GET".into(), Box::new(handle_get_request));
+    handlers.insert("HEAD".into(), Box::new(handle_head_request));
     handlers
 }
 
@@ -73,6 +74,16 @@ fn handle_get_request(
         }
         Err(_) => load_error(Status::Forbidden, server_data.config),
     }
+}
+
+fn handle_head_request(
+    request: &Request,
+    server_data: &HostState,
+    content_dir: &Path,
+    rel_res_path: PathBuf,
+) -> Response {
+    let get_response = handle_get_request(request, server_data, content_dir, rel_res_path);
+    get_response.to_head()
 }
 
 fn redirect_dir(path: &Path, server_data: &HostState) -> Response {
