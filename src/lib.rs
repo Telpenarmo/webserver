@@ -1,5 +1,5 @@
 pub mod http;
-pub mod parser;
+pub mod reader;
 pub mod static_server;
 pub mod utils;
 

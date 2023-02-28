@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
-use std::{env, io, thread};
+use std::{env, thread};
 
 use scoped_threadpool::Pool;
 
 use webserver::http::{Request, Response, Status};
+use webserver::reader::{read_request, ReadError};
 use webserver::*;
 use webserver::{Config, DomainHandler, ServerState};
 
@@ -109,80 +109,6 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
 fn write_connection_header(close: bool, response: &mut Response) {
     let connection_header = if close { "close" } else { "keep-alive" };
     response.set_header("Connection", connection_header);
-}
-
-enum ReadError {
-    ConnectionClosed,
-    Timeout,
-    BadSyntax,
-    TooManyHeaders,
-}
-
-fn get_res_or_partial(
-    buffer: &mut [u8],
-    max_headers_count: usize,
-) -> Option<Result<Request, ReadError>> {
-    let mut headers_size = 16;
-    loop {
-        match parser::try_parse(headers_size, buffer) {
-            Err(parser::Error::Partial) => break None,
-            Err(parser::Error::TooManyHeaders) => {
-                if headers_size < max_headers_count {
-                    headers_size = usize::min(2 * headers_size, max_headers_count);
-                } else {
-                    break Some(Err(ReadError::TooManyHeaders)); // 400
-                }
-            }
-            Err(parser::Error::Syntax) => break Some(Err(ReadError::BadSyntax)), // 400
-            Ok((req, _s)) => {
-                let content_length = req
-                    .headers
-                    .get("Content-Length")
-                    .map(|v| match String::from_utf8(v.to_owned()) {
-                        Ok(s) => match s.parse() {
-                            Ok(d) => Ok(d),
-                            Err(_) => Err(ReadError::BadSyntax),
-                        },
-                        Err(_) => Err(ReadError::BadSyntax),
-                    })
-                    .unwrap_or(Ok(0));
-                let _content_length: u32 = match content_length {
-                    Ok(len) => len,
-                    Err(err) => break Some(Err(err)),
-                };
-                break Some(Ok(req));
-            }
-        }
-    }
-}
-
-fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, ReadError> {
-    let mut read_buf = [0; 1024];
-    let mut buffer = Vec::with_capacity(1024);
-    stream
-        .set_read_timeout(Some(Duration::new(config.keep_alive.into(), 0)))
-        .unwrap();
-    loop {
-        match stream.read(&mut read_buf) {
-            Ok(0) => {
-                break Err(ReadError::ConnectionClosed); // connection closed
-            }
-            Err(err) => {
-                if err.kind() == io::ErrorKind::TimedOut || err.kind() == io::ErrorKind::WouldBlock
-                {
-                    break Err(ReadError::Timeout);
-                } // 408
-                eprintln!("err: {}", err.kind());
-            }
-            Ok(bytes_read) => {
-                buffer.extend_from_slice(&read_buf[..bytes_read]);
-                match get_res_or_partial(&mut buffer, config.max_headers_number) {
-                    None => continue,
-                    Some(res) => break res,
-                }
-            }
-        }
-    }
 }
 
 fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
