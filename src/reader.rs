@@ -107,6 +107,6 @@ fn get_content_length(req: &Request) -> Result<u32, ReadResult> {
         .unwrap_or(Ok(0));
     match content_length {
         Ok(len) => Ok(len),
-        Err(err) => return Err(ReadResult::Err(err)),
+        Err(err) => Err(ReadResult::Err(err)),
     }
 }

@@ -1,3 +1,4 @@
+#![warn(clippy::pedantic)]
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
@@ -7,7 +8,7 @@ use scoped_threadpool::Pool;
 
 use webserver::http::{Request, Response, Status};
 use webserver::reader::{read_request, ReadError};
-use webserver::*;
+use webserver::{get_hosts, static_server, HostState};
 use webserver::{Config, DomainHandler, ServerState};
 
 fn main() -> Result<(), String> {
@@ -36,7 +37,7 @@ fn listen(host: &HostState) {
     let listener = match TcpListener::bind(host.address) {
         Ok(listener) => listener,
         Err(err) => {
-            eprintln!("Failed to bind an address ({}): {}.", host.address, err);
+            eprintln!("Failed to bind an address ({}): {err}.", host.address);
             return;
         }
     };
@@ -50,7 +51,7 @@ fn listen(host: &HostState) {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => scope.execute(|| handle_connection(host, stream)),
-                Err(err) => eprintln!("connection failed: {}", err),
+                Err(err) => eprintln!("connection failed: {err}"),
             }
         }
     });
@@ -60,11 +61,11 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
     let peer = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(err) => {
-            eprintln!("Error checking peer address: {}", err);
+            eprintln!("Error checking peer address: {err}");
             return;
         }
     };
-    eprintln!("New connection from {}", peer);
+    eprintln!("New connection from {peer}");
 
     loop {
         let mut close_connection = false;
@@ -80,12 +81,13 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             }
             Err(ReadError::Timeout) => {
                 let resp = Response::new(Status::RequestTimeout);
-                eprintln!("Timeout for {}", peer);
+                eprintln!("Timeout for {peer}");
                 close_connection = true;
                 Some(resp)
             }
-            Err(ReadError::BadSyntax) => Some(Response::new(Status::BadRequest)),
-            Err(ReadError::TooManyHeaders) => Some(Response::new(Status::BadRequest)),
+            Err(ReadError::BadSyntax | ReadError::TooManyHeaders) => {
+                Some(Response::new(Status::BadRequest))
+            }
         };
         if let Some(mut response) = response {
             write_connection_header(close_connection, &mut response);
@@ -93,14 +95,14 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             let response = response.render();
             stream
                 .write_all(&response)
-                .unwrap_or_else(|err| eprintln!("Error writing response: {}", err));
+                .unwrap_or_else(|err| eprintln!("Error writing response: {err}"));
 
             stream
                 .flush()
-                .unwrap_or_else(|err| eprintln!("Error flushing response: {}", err))
+                .unwrap_or_else(|err| eprintln!("Error flushing response: {err}"));
         }
         if close_connection {
-            eprintln!("{} closed the connection.", peer);
+            eprintln!("{peer} closed the connection.");
             return;
         }
     }
