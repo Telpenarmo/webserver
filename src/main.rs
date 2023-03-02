@@ -2,8 +2,9 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
-use std::{env, thread};
+use std::thread;
 
+use clap::Parser;
 use scoped_threadpool::Pool;
 
 use webserver::http::{Request, Response, Status};
@@ -11,8 +12,8 @@ use webserver::reader::{read_request, ReadError};
 use webserver::{get_hosts, static_server, HostState};
 use webserver::{Config, DomainHandler, ServerState};
 
-fn main() -> Result<(), String> {
-    let config = Config::new(env::args())?;
+fn main() {
+    let config = Config::parse();
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
     let hosts = get_hosts(&server_state.config);
@@ -29,8 +30,6 @@ fn main() -> Result<(), String> {
                 .expect("Failed to spawn listener thread.");
         }
     });
-
-    Ok(())
 }
 
 fn listen(host: &HostState) {

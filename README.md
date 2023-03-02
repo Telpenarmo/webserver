@@ -11,7 +11,7 @@ However, *production-ready* is often close to *better*, and making things *bette
 The usage could be summarized in following line:
 
 ```sh
-cargo run $port $content-directory
+cargo run $content-directory -p $port
 ```
 
 However, there are a few points definitely worth mentioning.
@@ -67,7 +67,7 @@ This doesn't hurt me in any way, so I am not planning to change it.
 ## To Do
 
 - [ ] tests
-- [ ] use flags for optional configuration
+- [x] use flags for optional configuration
 - [ ] support more HTTP methods:
   - [x] HEAD
   - [ ] PUT

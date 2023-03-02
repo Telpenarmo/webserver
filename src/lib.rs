@@ -4,11 +4,11 @@ pub mod static_server;
 pub mod utils;
 
 use std::collections::HashMap;
-use std::env;
 use std::fs::{canonicalize, read_dir, File};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use http::Status;
 
 pub struct ServerState<'a> {
@@ -28,45 +28,42 @@ pub enum DomainHandler {
     Executable(File),
 }
 
+/// Simple, near-minimal static HTTP server.
+///
+/// Detailed notes on usage are included in the README.
+#[derive(Parser)]
 pub struct Config {
+    /// Path to directory containg content to be hosted
+    #[arg(value_parser = Config::verify_dir)]
     pub directory: PathBuf,
-    pub max_headers_number: usize,
+
+    /// Port under which content is served.
+    #[arg(short, long)]
     pub port: u16,
+
+    /// How long to keep TCP connection active, in seconds
+    #[arg(long, default_value_t = 2)]
     pub keep_alive: u8,
+
+    /// Maximal number of headers included in a request
+    #[arg(long, default_value_t = 512)]
+    pub max_headers_number: usize,
+
+    /// How many concurrent requests can one host handle
+    #[arg(long, default_value_t = 4)]
     pub threads_per_connection: u8,
 }
 
 impl Config {
-    pub fn new(mut args: env::Args) -> Result<Config, String> {
-        let usage = format!("Usage: {} port directory", args.next().unwrap());
-
-        let port = match args.next() {
-            None => return Err(usage),
-            Some(arg) => match arg.parse() {
-                Ok(p) => p,
-                Err(err) => return Err(format!("Error parsing port: {}", err)),
+    fn verify_dir(dir: &str) -> Result<PathBuf, String> {
+        let path = PathBuf::from(dir);
+        match canonicalize(path) {
+            Ok(path) => match path.read_dir() {
+                Ok(_) => Ok(path),
+                Err(err) => Err(format!("Directory inaccessible: {}", err)),
             },
-        };
-        let directory = match args.next() {
-            None => return Err(usage),
-            Some(arg) => {
-                let path = PathBuf::from(arg);
-                match canonicalize(path) {
-                    Ok(path) => match path.read_dir() {
-                        Ok(_) => path,
-                        Err(err) => return Err(format!("Directory inaccessible: {}", err)),
-                    },
-                    Err(err) => return Err(format!("Invalid directory: {}", err)),
-                }
-            }
-        };
-        Ok(Config {
-            directory,
-            max_headers_number: 512,
-            port,
-            keep_alive: 20,
-            threads_per_connection: 4,
-        })
+            Err(err) => Err(format!("Invalid directory: {}", err)),
+        }
     }
 }
 
