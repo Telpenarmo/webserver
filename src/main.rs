@@ -6,13 +6,16 @@ use std::thread;
 
 use clap::Parser;
 use scoped_threadpool::Pool;
+use tracing::{error, info, warn};
 
 use webserver::http::{Request, Response, Status};
 use webserver::reader::{read_request, ReadError};
-use webserver::{get_hosts, static_server, HostState};
+use webserver::{get_hosts, logging, static_server, HostState};
 use webserver::{Config, DomainHandler, ServerState};
 
 fn main() {
+    logging::init();
+
     let config = Config::parse();
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
@@ -36,12 +39,12 @@ fn listen(host: &HostState) {
     let listener = match TcpListener::bind(host.address) {
         Ok(listener) => listener,
         Err(err) => {
-            eprintln!("Failed to bind an address ({}): {err}.", host.address);
+            warn!("Failed to bind an address ({}): {err}.", host.address);
             return;
         }
     };
     println!(
-        "Server is listening on http://{}:{} (http://{})",
+        "Server is listening on http://{}:{} (http://{})\n",
         host.hostname, host.config.port, host.address
     );
 
@@ -50,7 +53,7 @@ fn listen(host: &HostState) {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => scope.execute(|| handle_connection(host, stream)),
-                Err(err) => eprintln!("connection failed: {err}"),
+                Err(err) => error!("connection failed: {err}"),
             }
         }
     });
@@ -60,11 +63,11 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
     let peer = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(err) => {
-            eprintln!("Error checking peer address: {err}");
+            error!("Error checking peer address: {err}");
             return;
         }
     };
-    eprintln!("New connection from {peer}");
+    info!("New connection from {peer}");
 
     loop {
         let mut close_connection = false;
@@ -80,7 +83,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             }
             Err(ReadError::Timeout) => {
                 let resp = Response::new(Status::RequestTimeout);
-                eprintln!("Timeout for {peer}");
+                info!("Timeout for {peer}");
                 close_connection = true;
                 Some(resp)
             }
@@ -94,14 +97,14 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             let response = response.render();
             stream
                 .write_all(&response)
-                .unwrap_or_else(|err| eprintln!("Error writing response: {err}"));
+                .unwrap_or_else(|err| error!("Error writing response: {err}"));
 
             stream
                 .flush()
-                .unwrap_or_else(|err| eprintln!("Error flushing response: {err}"));
+                .unwrap_or_else(|err| error!("Error flushing response: {err}"));
         }
         if close_connection {
-            eprintln!("{peer} closed the connection.");
+            info!("{peer} closed the connection.");
             return;
         }
     }

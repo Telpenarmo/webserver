@@ -1,4 +1,5 @@
 pub mod http;
+pub mod logging;
 pub mod reader;
 pub mod static_server;
 pub mod utils;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use http::Status;
+use tracing::warn;
 
 pub struct ServerState<'a> {
     pub config: Config,
@@ -72,7 +74,7 @@ pub fn get_hosts(config: &Config) -> Vec<HostState> {
     let hosts = hostnames.drain(..).map(|(dir, hostname)| {
         let address: SocketAddr = (hostname.clone(), config.port)
             .to_socket_addrs()
-            .map_err(|_err| eprintln!("Invalid IP address for host {}; ignoring", hostname))
+            .map_err(|_err| warn!("Invalid IP address for host {}; ignoring", hostname))
             .ok()?
             .next()
             .unwrap();
@@ -97,11 +99,11 @@ fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
 
         if path.is_dir() {
             let Ok(sub_dir) = entry.file_name().into_string() else {
-                eprintln!("Non-Unicode file_name; ignoring.");
+                warn!("Non-Unicode file_name; ignoring.");
                 continue;
             };
             let Ok(path) = path.canonicalize() else {
-                eprintln!("Error accessing {} subdirectory; ignoring.", sub_dir);
+                warn!("Error accessing {} subdirectory; ignoring.", sub_dir);
                 continue;
             };
             hosts.push((path, sub_dir));

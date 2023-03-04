@@ -2,6 +2,8 @@ use std::io::{self, Read};
 use std::net::TcpStream;
 use std::time::Duration;
 
+use tracing::warn;
+
 use crate::{http::Request, Config};
 
 pub enum ReadError {
@@ -27,7 +29,7 @@ pub fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, 
                 {
                     break Err(ReadError::Timeout);
                 } // 408
-                eprintln!("err: {}", err.kind());
+                warn!("err: {}", err.kind());
             }
             Ok(bytes_read) => {
                 buffer.extend_from_slice(&read_buf[..bytes_read]);
@@ -87,7 +89,7 @@ fn try_parse(headers_size: usize, buffer: &mut [u8]) -> Result<(Request, usize),
         Ok(httparse::Status::Partial) => Err(ParsingError::Partial),
         Err(httparse::Error::TooManyHeaders) => Err(ParsingError::TooManyHeaders),
         Err(err) => {
-            eprintln!("Parsing error: {}", err);
+            warn!("Parsing error: {}", err);
             Err(ParsingError::Syntax)
         }
     }

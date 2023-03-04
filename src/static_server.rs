@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use tracing::info;
+
 use crate::{get_error_page, http::*, Config, HostState};
 
 pub struct Data {
@@ -35,7 +37,7 @@ pub fn handle_request(request: Request, server_data: &HostState, data: &Data) ->
     let mut path = request.path.to_string();
     path.remove(0);
     rel_res_path.push(&path);
-    eprintln!("requested resource: {}", rel_res_path.display());
+    info!("requested resource: {}", rel_res_path.display());
 
     handler(&request, server_data, content_dir, rel_res_path)
 }
@@ -103,7 +105,7 @@ fn load_error(status: Status, config: &Config) -> Response {
     let mut response = Response::new(status);
     let error_file = get_error_page(&status, config);
     if let Some(path) = error_file {
-        eprintln!("loading error page from file");
+        info!("loading error page from file");
         response.load_file(path.as_path())
     } else {
         response.add_content("unknown error");

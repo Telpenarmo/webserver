@@ -9,3 +9,6 @@ edition = "2021"
 clap = { version = "4.1.7", features = ["derive", "env", "wrap_help"] }
 httparse = "1.7.1"
 scoped_threadpool = "0.1.9"
+time = { version = "0.3.20", features = ["macros", "local-offset", "formatting"] }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["json", "time"] }

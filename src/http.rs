@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::{collections::HashMap, fmt::Display};
+use tracing::error;
 
 use crate::utils::match_file_type;
 
@@ -146,6 +147,6 @@ pub fn server_error<M>(msg: M) -> Response
 where
     M: Display,
 {
-    eprintln!("server error: {}", msg);
+    error!("server error: {}", msg);
     Response::with_content(Status::InternalServerError, "Internal server error.")
 }
