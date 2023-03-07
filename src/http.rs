@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::{collections::HashMap, fmt::Display};
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::utils::match_file_type;
 
@@ -54,7 +54,7 @@ impl Response {
     }
 
     pub fn render(mut self) -> Vec<u8> {
-        let status_line = format!("HTTP/1.1 {}", self.status.code());
+        let status_line = self.status_line();
         let mut lines = Vec::with_capacity(self.headers.len() + 3);
         lines.push(status_line.into());
         let headers = self.headers.drain().map(Response::render_header);
@@ -64,6 +64,10 @@ impl Response {
             lines.push(content);
         }
         lines.join("\r\n".as_bytes())
+    }
+
+    pub fn status_line(&self) -> String {
+        format!("HTTP/1.1 {}", self.status.code())
     }
 
     fn render_header((name, value): (String, Vec<u8>)) -> Vec<u8> {
@@ -92,15 +96,20 @@ impl Response {
     pub fn load_file(mut self, path: &Path) -> Response {
         let mut file = match File::open(path) {
             Ok(file) => file,
-            Err(err) => return server_error(format!("Error on opening file: {}", err)),
+            Err(err) => {
+                return server_error(format!("Error on opening file {}: {}", path.display(), err))
+            }
         };
         let mut buffer = Vec::new();
         match file.read_to_end(&mut buffer) {
             Ok(_) => (),
-            Err(err) => return server_error(format!("Error on reading file: {}", err)),
+            Err(err) => {
+                return server_error(format!("Error on reading file {}: {}", path.display(), err))
+            }
         };
         self.add_content(buffer);
         self.set_header("Content-Type", match_file_type(path));
+        debug!("File {} loaded", path.display());
         self
     }
 

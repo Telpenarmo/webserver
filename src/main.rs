@@ -6,7 +6,7 @@ use std::thread;
 
 use clap::Parser;
 use scoped_threadpool::Pool;
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn};
 
 use webserver::http::{Request, Response, Status};
 use webserver::reader::{read_request, ReadError};
@@ -33,6 +33,8 @@ fn main() {
                 .expect("Failed to spawn listener thread.");
         }
     });
+
+    info!("Exiting");
 }
 
 fn listen(host: &HostState) {
@@ -57,6 +59,7 @@ fn listen(host: &HostState) {
             }
         }
     });
+    info!("Closing listener");
 }
 
 fn handle_connection(host: &HostState, mut stream: TcpStream) {
@@ -67,8 +70,11 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             return;
         }
     };
-    info!("New connection from {peer}");
+    let span = info_span!("connection", peer = peer.to_string());
+    let _enter = span.enter();
 
+    info!("Connected");
+    
     loop {
         let mut close_connection = false;
         let response = match read_request(&mut stream, host.config) {
@@ -83,7 +89,6 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
             }
             Err(ReadError::Timeout) => {
                 let resp = Response::new(Status::RequestTimeout);
-                info!("Timeout for {peer}");
                 close_connection = true;
                 Some(resp)
             }
@@ -94,6 +99,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
         if let Some(mut response) = response {
             write_connection_header(close_connection, &mut response);
 
+            info!(response = response.status_line(), "Responded");
             let response = response.render();
             stream
                 .write_all(&response)
@@ -104,7 +110,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream) {
                 .unwrap_or_else(|err| error!("Error flushing response: {err}"));
         }
         if close_connection {
-            info!("{peer} closed the connection.");
+            info!("Disconnected");
             return;
         }
     }
@@ -116,6 +122,12 @@ fn write_connection_header(close: bool, response: &mut Response) {
 }
 
 fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
+    let target = format!("{} {}", request.method, request.path);
+    let span = info_span!("request", target);
+    let _enter = span.enter();
+
+    info!("Request received");
+
     let mut close = request
         .headers
         .get("close")

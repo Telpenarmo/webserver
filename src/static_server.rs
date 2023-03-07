@@ -37,7 +37,6 @@ pub fn handle_request(request: Request, server_data: &HostState, data: &Data) ->
     let mut path = request.path.to_string();
     path.remove(0);
     rel_res_path.push(&path);
-    info!("requested resource: {}", rel_res_path.display());
 
     handler(&request, server_data, content_dir, rel_res_path)
 }
@@ -89,6 +88,8 @@ fn handle_head_request(
 }
 
 fn redirect_dir(path: &Path, server_data: &HostState) -> Response {
+    info!("Redirecting");
+
     let mut resp = Response::new(Status::Moved);
     let Some(path) = path.to_str() else {
         return load_error(Status::BadRequest, server_data.config);
@@ -102,10 +103,10 @@ fn redirect_dir(path: &Path, server_data: &HostState) -> Response {
 }
 
 fn load_error(status: Status, config: &Config) -> Response {
+    info!("loading error");
     let mut response = Response::new(status);
     let error_file = get_error_page(&status, config);
     if let Some(path) = error_file {
-        info!("loading error page from file");
         response.load_file(path.as_path())
     } else {
         response.add_content("unknown error");
