@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic)]
 use std::collections::HashMap;
 use std::io::Write;
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::thread;
 
 use clap::Parser;
@@ -20,16 +20,38 @@ fn main() {
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
     let hosts = get_hosts(&server_state.config);
+    let addresses: Vec<_> = hosts.iter().map(|h| h.address).collect();
+    let mut senders = Vec::new();
     for host in hosts {
-        server_state.hosts.insert(host.hostname.clone(), host);
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        server_state.hosts.insert(host.hostname.clone(), (host, rx));
+        senders.push(tx);
     }
     let server_state = &server_state;
 
+    // That's bizarre, so let me describe the mechanism of graceful-shotdown applied here.
+    // The problem is that main doesn't have direct access to thread pools, as they are created per host.
+    // To workaround this, we use channels, and after receiving termination signal, we push unit
+    // to all listener threads.
+    // Unfortunately, because listening for connections is being done in non-blocking mode,
+    // listeners get termination message on nearest wake-up.
+    // So, after sending that message, we initialize connection to listeners by hand
+    ctrlc::set_handler(move || {
+        info!("Attempting to terminate threads");
+        for sender in &senders {
+            sender.send(()).expect("Failed to send kill message");
+        }
+        for addr in &addresses {
+            TcpStream::connect(addr).unwrap();
+        }
+    })
+    .expect("Failed to set termination handler");
+
     thread::scope(|scope| {
-        for host in server_state.hosts.values() {
+        for (host, recv) in server_state.hosts.values() {
             thread::Builder::new()
                 .name(format!("webserver: {} listener", host.address))
-                .spawn_scoped(scope, || listen(host))
+                .spawn_scoped(scope, || listen(host, recv))
                 .expect("Failed to spawn listener thread.");
         }
     });
@@ -37,7 +59,9 @@ fn main() {
     info!("Exiting");
 }
 
-fn listen(host: &HostState) {
+fn listen(host: &HostState, recv: &crossbeam_channel::Receiver<()>) {
+    let span = info_span!("", host = host.hostname);
+    let _enter = span.enter();
     let listener = match TcpListener::bind(host.address) {
         Ok(listener) => listener,
         Err(err) => {
@@ -51,30 +75,25 @@ fn listen(host: &HostState) {
     );
 
     let mut pool = Pool::new(host.config.threads_per_connection.into());
-    pool.scoped(|scope| {
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => scope.execute(|| handle_connection(host, stream)),
-                Err(err) => error!("connection failed: {err}"),
-            }
+    pool.scoped(|scope| loop {
+        if recv.try_recv().is_ok() {
+            info!("Closing listener");
+            break;
+        };
+        let stream = listener.accept();
+        match stream {
+            Ok((stream, peer)) => scope.execute(move || handle_connection(host, stream, peer)),
+            Err(err) => error!("connection failed: {err}"),
         }
     });
-    info!("Closing listener");
 }
 
-fn handle_connection(host: &HostState, mut stream: TcpStream) {
-    let peer = match stream.peer_addr() {
-        Ok(addr) => addr,
-        Err(err) => {
-            error!("Error checking peer address: {err}");
-            return;
-        }
-    };
+fn handle_connection(host: &HostState, mut stream: TcpStream, peer: SocketAddr) {
     let span = info_span!("connection", peer = peer.to_string());
     let _enter = span.enter();
 
     info!("Connected");
-    
+
     loop {
         let mut close_connection = false;
         let response = match read_request(&mut stream, host.config) {

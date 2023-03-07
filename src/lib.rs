@@ -15,7 +15,7 @@ use tracing::warn;
 
 pub struct ServerState<'a> {
     pub config: Config,
-    pub hosts: HashMap<String, HostState<'a>>,
+    pub hosts: HashMap<String, (HostState<'a>, crossbeam_channel::Receiver<()>)>,
 }
 
 pub struct HostState<'a> {
