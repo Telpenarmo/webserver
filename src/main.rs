@@ -10,7 +10,7 @@ use tracing::{error, info, info_span, warn};
 
 use webserver::http::{Request, Response, Status};
 use webserver::reader::{read_request, ReadError};
-use webserver::{get_hosts, logging, static_server, HostState};
+use webserver::{get_hosts, logging, static_server, HostData};
 use webserver::{Config, DomainHandler, ServerState};
 
 fn main() {
@@ -20,11 +20,13 @@ fn main() {
     let hosts = HashMap::new();
     let mut server_state = ServerState { config, hosts };
     let hosts = get_hosts(&server_state.config);
-    let addresses: Vec<_> = hosts.iter().map(|h| h.address).collect();
+    let addresses: Vec<_> = hosts.iter().map(|h| *h.get_address()).collect();
     let mut senders = Vec::new();
     for host in hosts {
         let (tx, rx) = crossbeam_channel::bounded(1);
-        server_state.hosts.insert(host.hostname.clone(), (host, rx));
+        server_state
+            .hosts
+            .insert(host.get_hostname().clone(), (host, rx));
         senders.push(tx);
     }
     let server_state = &server_state;
@@ -50,7 +52,7 @@ fn main() {
     thread::scope(|scope| {
         for (host, recv) in server_state.hosts.values() {
             thread::Builder::new()
-                .name(format!("webserver: {} listener", host.address))
+                .name(format!("webserver: {} listener", host.get_address()))
                 .spawn_scoped(scope, || listen(host, recv))
                 .expect("Failed to spawn listener thread.");
         }
@@ -59,22 +61,24 @@ fn main() {
     info!("Exiting");
 }
 
-fn listen(host: &HostState, recv: &crossbeam_channel::Receiver<()>) {
-    let span = info_span!("", host = host.hostname);
+fn listen(host: &DomainHandler, recv: &crossbeam_channel::Receiver<()>) {
+    let span = info_span!("", host = host.get_hostname());
     let _enter = span.enter();
-    let listener = match TcpListener::bind(host.address) {
+    let listener = match TcpListener::bind(host.get_address()) {
         Ok(listener) => listener,
         Err(err) => {
-            warn!("Failed to bind an address ({}): {err}.", host.address);
+            warn!("Failed to bind an address ({}): {err}.", host.get_address());
             return;
         }
     };
     println!(
         "Server is listening on http://{}:{} (http://{})\n",
-        host.hostname, host.config.port, host.address
+        host.get_hostname(),
+        host.get_config().port,
+        host.get_address()
     );
 
-    let mut pool = Pool::new(host.config.threads_per_connection.into());
+    let mut pool = Pool::new(host.get_config().threads_per_connection.into());
     pool.scoped(|scope| loop {
         if recv.try_recv().is_ok() {
             info!("Closing listener");
@@ -88,7 +92,7 @@ fn listen(host: &HostState, recv: &crossbeam_channel::Receiver<()>) {
     });
 }
 
-fn handle_connection(host: &HostState, mut stream: TcpStream, peer: SocketAddr) {
+fn handle_connection(host: &DomainHandler, mut stream: TcpStream, peer: SocketAddr) {
     let span = info_span!("connection", peer = peer.to_string());
     let _enter = span.enter();
 
@@ -96,7 +100,7 @@ fn handle_connection(host: &HostState, mut stream: TcpStream, peer: SocketAddr) 
 
     loop {
         let mut close_connection = false;
-        let response = match read_request(&mut stream, host.config) {
+        let response = match read_request(&mut stream, host.get_config()) {
             Ok(request) => {
                 let (response, close) = handle_request(host, request);
                 close_connection = close;
@@ -140,7 +144,7 @@ fn write_connection_header(close: bool, response: &mut Response) {
     response.set_header("Connection", connection_header);
 }
 
-fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
+fn handle_request(handler: &DomainHandler, request: Request) -> (Response, bool) {
     let target = format!("{} {}", request.method, request.path);
     let span = info_span!("request", target);
     let _enter = span.enter();
@@ -152,8 +156,8 @@ fn handle_request(host_data: &HostState, request: Request) -> (Response, bool) {
         .get("close")
         .map_or(false, |v| v.eq("close".as_bytes()));
 
-    let response = match &host_data.handler {
-        DomainHandler::StaticDir(data) => static_server::handle_request(request, host_data, data),
+    let response = match &handler {
+        DomainHandler::StaticDir(data) => static_server::handle_request(request, data),
         DomainHandler::Executable(_) => {
             close = true;
             Response::with_content(

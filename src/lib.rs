@@ -15,19 +15,41 @@ use tracing::warn;
 
 pub struct ServerState<'a> {
     pub config: Config,
-    pub hosts: HashMap<String, (HostState<'a>, crossbeam_channel::Receiver<()>)>,
+    pub hosts: HashMap<String, (DomainHandler<'a>, crossbeam_channel::Receiver<()>)>,
 }
 
-pub struct HostState<'a> {
-    pub handler: DomainHandler,
-    pub config: &'a Config,
-    pub address: SocketAddr,
-    pub hostname: String,
-}
-
-pub enum DomainHandler {
-    StaticDir(static_server::Data),
+pub enum DomainHandler<'a> {
+    StaticDir(static_server::Data<'a>),
     Executable(File),
+}
+
+pub trait HostData<'a> {
+    fn get_config(&self) -> &Config;
+    fn get_address(&self) -> &SocketAddr;
+    fn get_hostname(&self) -> &String;
+}
+
+impl HostData<'_> for DomainHandler<'_> {
+    fn get_config(&self) -> &Config {
+        match self {
+            Self::StaticDir(data) => data.get_config(),
+            Self::Executable(_) => panic!("Not supported yet"),
+        }
+    }
+
+    fn get_address(&self) -> &SocketAddr {
+        match self {
+            Self::StaticDir(data) => data.get_address(),
+            Self::Executable(_) => panic!("Not supported yet"),
+        }
+    }
+
+    fn get_hostname(&self) -> &String {
+        match self {
+            Self::StaticDir(data) => data.get_hostname(),
+            Self::Executable(_) => panic!("Not supported yet"),
+        }
+    }
 }
 
 /// Simple, near-minimal static HTTP server.
@@ -69,7 +91,7 @@ impl Config {
     }
 }
 
-pub fn get_hosts(config: &Config) -> Vec<HostState> {
+pub fn get_hosts(config: &Config) -> Vec<DomainHandler> {
     let mut hostnames = get_hostnames(&config.directory);
     let hosts = hostnames.drain(..).map(|(dir, hostname)| {
         let address: SocketAddr = (hostname.clone(), config.port)
@@ -78,13 +100,8 @@ pub fn get_hosts(config: &Config) -> Vec<HostState> {
             .ok()?
             .next()
             .unwrap();
-        let server_data = static_server::Data::new(dir);
-        Some(HostState {
-            handler: DomainHandler::StaticDir(server_data),
-            config,
-            address,
-            hostname,
-        })
+        let server_data = static_server::Data::new(dir, config, address, hostname);
+        Some(DomainHandler::StaticDir(server_data))
     });
     hosts.flatten().collect()
 }
