@@ -1,3 +1,6 @@
 /target
 /webpages
 *log.json
+
+.vscode
+.fleet
