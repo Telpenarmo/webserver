@@ -48,7 +48,7 @@ impl<'a> Data<'a> {
     }
 }
 
-type MethodHandler = Box<dyn Fn(&Request, &Data, &Path, PathBuf) -> Response + Sync>;
+type MethodHandler = Box<dyn Fn(&Data, &Request) -> Response + Sync>;
 
 pub fn handle_request(request: Request, data: &Data) -> Response {
     let Some(handler) = data.handlers.get(&request.method) else {
@@ -58,13 +58,15 @@ pub fn handle_request(request: Request, data: &Data) -> Response {
             return resp;
         };
 
-    let content_dir = &data.content_dir;
+    handler(data, &request)
+}
+
+fn get_relative_resource_path(content_dir: &Path, request: &Request) -> PathBuf {
     let mut rel_res_path = content_dir.to_path_buf();
     let mut path = request.path.to_string();
     path.remove(0);
     rel_res_path.push(&path);
-
-    handler(&request, data, content_dir, rel_res_path)
+    rel_res_path
 }
 
 fn get_handlers() -> HashMap<String, MethodHandler> {
@@ -74,12 +76,8 @@ fn get_handlers() -> HashMap<String, MethodHandler> {
     handlers
 }
 
-fn handle_get_request(
-    _request: &Request,
-    data: &Data,
-    content_dir: &Path,
-    rel_res_path: PathBuf,
-) -> Response {
+fn handle_get_request(data: &Data, request: &Request) -> Response {
+    let rel_res_path = get_relative_resource_path(&data.content_dir, request);
     let res_path = match std::fs::canonicalize(rel_res_path) {
         Ok(path) => path,
         Err(err) => match err.kind() {
@@ -91,7 +89,7 @@ fn handle_get_request(
         },
     };
 
-    match res_path.strip_prefix(content_dir) {
+    match res_path.strip_prefix(&data.content_dir) {
         Ok(rel_res_path) => {
             if res_path.is_dir() {
                 return redirect_dir(rel_res_path, data);
@@ -103,13 +101,8 @@ fn handle_get_request(
     }
 }
 
-fn handle_head_request(
-    request: &Request,
-    server_data: &Data,
-    content_dir: &Path,
-    rel_res_path: PathBuf,
-) -> Response {
-    let get_response = handle_get_request(request, server_data, content_dir, rel_res_path);
+fn handle_head_request(data: &Data, request: &Request) -> Response {
+    let get_response = handle_get_request(data, request);
     get_response.to_head()
 }
 
