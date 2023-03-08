@@ -49,7 +49,9 @@ impl Response {
         C: Into<Vec<u8>>,
     {
         let mut resp = Response::new(status);
-        resp.add_content(content.into());
+        let mut content: Vec<u8> = content.into();
+        content.push(b'\n');
+        resp.add_content(content);
         resp
     }
 

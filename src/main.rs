@@ -115,8 +115,11 @@ fn handle_connection(host: &DomainHandler, mut stream: TcpStream, peer: SocketAd
                 close_connection = true;
                 Some(resp)
             }
-            Err(ReadError::BadSyntax | ReadError::TooManyHeaders) => {
+            Err(ReadError::BadSyntax(None) | ReadError::TooManyHeaders) => {
                 Some(Response::new(Status::BadRequest))
+            }
+            Err(ReadError::BadSyntax(Some(msg))) => {
+                Some(Response::with_content(Status::BadRequest, msg))
             }
         };
         if let Some(mut response) = response {

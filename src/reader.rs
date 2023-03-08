@@ -9,7 +9,7 @@ use crate::{http::Request, Config};
 pub enum ReadError {
     ConnectionClosed,
     Timeout,
-    BadSyntax,
+    BadSyntax(Option<String>),
     TooManyHeaders,
 }
 
@@ -36,7 +36,16 @@ pub fn read_request(stream: &mut TcpStream, config: &Config) -> Result<Request, 
                 match try_read(&mut buffer, config.max_headers_number) {
                     ReadResult::Partial => continue,
                     ReadResult::Err(err) => break Err(err),
-                    ReadResult::Ok(res) => break Ok(res),
+                    ReadResult::Ok(res) => {
+                        let res = if res.path.starts_with('/') {
+                            Ok(res)
+                        } else {
+                            Err(ReadError::BadSyntax(Some(
+                                "Request target must start with '/'.".into(),
+                            )))
+                        };
+                        break res;
+                    }
                 }
             }
         }
@@ -61,7 +70,7 @@ fn try_read(buffer: &mut [u8], max_headers_count: usize) -> ReadResult {
                     break ReadResult::Err(ReadError::TooManyHeaders);
                 }
             }
-            Err(ParsingError::Syntax) => break ReadResult::Err(ReadError::BadSyntax),
+            Err(ParsingError::Syntax) => break ReadResult::Err(ReadError::BadSyntax(None)),
             Ok((req, _s)) => {
                 if let Err(err) = get_content_length(&req) {
                     break err;
@@ -102,9 +111,13 @@ fn get_content_length(req: &Request) -> Result<u32, ReadResult> {
         .map(|v| match String::from_utf8(v.to_owned()) {
             Ok(s) => match s.parse() {
                 Ok(d) => Ok(d),
-                Err(_) => Err(ReadError::BadSyntax),
+                Err(_) => Err(ReadError::BadSyntax(Some(
+                    "Content-Length value must be an integer.".into(),
+                ))),
             },
-            Err(_) => Err(ReadError::BadSyntax),
+            Err(_) => Err(ReadError::BadSyntax(Some(
+                "Content-Length contains non-UTF8 characters.".into(),
+            ))),
         })
         .unwrap_or(Ok(0));
     match content_length {
