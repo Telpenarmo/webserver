@@ -7,7 +7,7 @@ use std::{
 
 use tracing::info;
 
-use crate::{get_error_page, http::*, Config, HostData};
+use crate::{http::*, utils::path_if_existing, Config, HostData};
 
 pub struct Data<'a> {
     content_dir: PathBuf,
@@ -124,11 +124,23 @@ fn redirect_dir(path: &Path, data: &Data) -> Response {
 fn load_error(status: Status, data: &Data) -> Response {
     info!("loading error");
     let mut response = Response::new(status);
-    let error_file = get_error_page(&status, data.config);
+    let error_file = get_error_page(&status, data);
     if let Some(path) = error_file {
         response.load_file(path.as_path())
     } else {
-        response.add_content("unknown error");
+        response.add_content(format!("Error: {}", status.code()));
         response
     }
+}
+
+pub fn get_error_page(status: &Status, data: &Data) -> Option<PathBuf> {
+    let file_name = status.code().to_string() + ".html";
+    let file_name = PathBuf::from(file_name);
+
+    let local_path = data.content_dir.join(&file_name);
+
+    path_if_existing(local_path).or_else(|| {
+        let global_path = data.config.directory.join(&file_name);
+        path_if_existing(global_path)
+    })
 }

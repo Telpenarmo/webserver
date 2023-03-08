@@ -10,7 +10,6 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use http::Status;
 use tracing::warn;
 
 pub struct ServerState<'a> {
@@ -127,18 +126,4 @@ fn get_hostnames(root: &Path) -> Vec<(PathBuf, String)> {
         }
     }
     hosts
-}
-
-pub fn get_error_page(status: &Status, config: &Config) -> Option<PathBuf> {
-    let file_path = status.code().to_string() + ".html";
-    let file_path = PathBuf::from(file_path);
-
-    let mut path = config.directory.clone();
-    path.push(file_path);
-
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
 }
