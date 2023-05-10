@@ -62,6 +62,8 @@ This doesn't hurt me in any way, so I am not planning to change it.
 - many hosts, each using its own thread
 - keeping connection alive for some time
 - separate thread pool for each host
+- graceful shutdown
+- per-host and global error pages ({status_code}.html)
 - some other, I'll update that list someday
 
 ## To Do
@@ -74,4 +76,4 @@ This doesn't hurt me in any way, so I am not planning to change it.
   - [ ] POST
   - [ ] DELETE
 - [ ] support dynamic hosts
-- [ ] setup proper logging
+- [x] setup proper logging

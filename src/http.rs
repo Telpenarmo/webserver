@@ -37,9 +37,11 @@ pub struct Response {
 
 impl Response {
     pub fn new(status: Status) -> Response {
+        let mut headers = HashMap::with_capacity(5);
+        headers.insert("Server".into(), "Telpenarmo's webserver".into());
         Response {
             status,
-            headers: HashMap::with_capacity(5),
+            headers,
             content: None,
         }
     }
