@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::thread;
+use std::time::SystemTime;
 
 use clap::Parser;
 use scoped_threadpool::Pool;
@@ -123,6 +124,10 @@ fn handle_connection(host: &DomainHandler, mut stream: TcpStream, peer: SocketAd
             }
         };
         if let Some(mut response) = response {
+            let now = SystemTime::now();
+
+            response.set_header("Date", httpdate::fmt_http_date(now));
+
             write_connection_header(close_connection, &mut response);
 
             info!(response = response.status_line(), "Responded");

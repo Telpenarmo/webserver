@@ -113,8 +113,21 @@ impl Response {
         };
         self.add_content(buffer);
         self.set_header("Content-Type", match_file_type(path));
+        self.set_modified(file, path);
         debug!("File {} loaded", path.display());
         self
+    }
+
+    fn set_modified(&mut self, file: File, path: &Path) {
+        match file.metadata() {
+            Ok(metadata) => {
+                let modified = metadata.modified().expect("Unsupported platform");
+                self.set_header("Last-Modified", httpdate::fmt_http_date(modified));
+            }
+            Err(err) => {
+                error!("Failed to load file {} metadata: {}", path.display(), err);
+            }
+        }
     }
 
     pub fn to_head(mut self) -> Response {
