@@ -15,5 +15,5 @@ httpdate = "1.0.2"
 mime_guess = "2.0.4"
 scoped_threadpool = "0.1.9"
 time = { version = "0.3.20", features = ["macros", "local-offset", "formatting"] }
-tracing = "0.1.37"
+tracing = { version = "0.1.37", features = ["release_max_level_info"] }
 tracing-subscriber = { version = "0.3.16", features = ["json", "time"] }
