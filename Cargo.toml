@@ -9,6 +9,7 @@ edition = "2021"
 clap = { version = "4.1.7", features = ["derive", "env", "wrap_help"] }
 crossbeam-channel = "0.5.7"
 ctrlc = { version = "3.2.5", features = ["termination"] }
+etag = { version = "4.0.0" }
 httparse = "1.7.1"
 httpdate = "1.0.2"
 mime_guess = "2.0.4"

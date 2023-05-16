@@ -94,6 +94,10 @@ impl Response {
         let content = content.into();
         let length = content.len().to_string();
         self.headers.insert("Content-Length".into(), length.into());
+
+        let etag = etag::EntityTag::from_data(&content);
+        self.set_header("ETag", format!("{etag}"));
+
         self.content = Some(content);
     }
 
@@ -111,14 +115,16 @@ impl Response {
                 return server_error(format!("Error on reading file {}: {}", path.display(), err))
             }
         };
+
         self.add_content(buffer);
         self.set_header("Content-Type", match_file_type(path));
-        self.set_modified(file, path);
+        self.set_modified(&file, path);
+
         debug!("File {} loaded", path.display());
         self
     }
 
-    fn set_modified(&mut self, file: File, path: &Path) {
+    fn set_modified(&mut self, file: &File, path: &Path) {
         match file.metadata() {
             Ok(metadata) => {
                 let modified = metadata.modified().expect("Unsupported platform");
