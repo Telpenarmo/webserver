@@ -10,7 +10,8 @@ use tracing_subscriber::{
 
 pub fn init() {
     let today: OffsetDateTime = SystemTime::now().into();
-    let log_file_path = format!("{}.log.json", today.date());
+    let log_file_path = format!("logs/{}.log.json", today.date());
+    fs::create_dir_all("logs").expect("Failed to create logs directory");
     let log_file = fs::OpenOptions::new()
         .create(true)
         .append(true)
